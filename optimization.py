@@ -1,17 +1,22 @@
 import numpy as np
 import scipy.sparse as sp 
+from gp_util import *
 
-def init_optimization(OPT,FE,GEOM):
+def init_optimization(FE,OPT,GEOM):
     # Initialize functions to compute
     # Concatenate list of functions to be computed
-    f_list = { 0:OPT['functions']['objective'] , 1:OPT['functions']['constraints{:}'] }
+    f_list = {}
+    f_list[0] = OPT['functions']['objective']
+    f_list[1] = OPT['functions']['constraints']
 
     # here we list all the functions that are available to compute as f{i}
     f = {}
 
+    f[0] = {}
     f[0]['name'] = 'compliance'
     f[0]['function'] = 'compute_compliance'
 
+    f[1] = {}
     f[1]['name'] = 'volume fraction'
     f[1]['function'] = 'compute_volume_fraction'
 
@@ -19,11 +24,11 @@ def init_optimization(OPT,FE,GEOM):
     n = len(f)
     m = len(f_list)
 
+    OPT['functions']['f'] = {}
     for j in range(0,m):
         for i in range(0,n):
             if f[i]['name'] == f_list[j]:
                 OPT['functions']['f'][j] = f[i]
-
 
     OPT['functions']['n_func'] =  len(OPT['functions']['f'])
 
@@ -41,14 +46,14 @@ def init_optimization(OPT,FE,GEOM):
     # bars:
 
     OPT['n_dv'] = FE['dim']*GEOM['n_point'] + 2*GEOM['n_bar']
-    OPT['dv']= zeros(OPT['n_dv'],1)
+    OPT['dv']   = np.zeros( (OPT['n_dv'],1) )
 
     OPT['point_dv']  = np.arange(0,FE['dim']*GEOM['n_point']) # such that dv(point_dv) = point
     OPT['size_dv']   = OPT['point_dv'][-1] + np.arange(0,GEOM['n_bar'])
     OPT['radius_dv'] = OPT['size_dv'][-1] + np.arange(0,GEOM['n_bar'])
 
-
     if OPT['options']['dv_scaling']:
+        OPT['scaling'] = {}
         # Compute variable limits for Eq. (32)
         OPT['scaling']['point_scale'] = FE['coord_max']-FE['coord_min']
         OPT['scaling']['point_min']   = FE['coord_min']
@@ -68,29 +73,29 @@ def init_optimization(OPT,FE,GEOM):
         OPT['scaling']['radius_min']   = 0.0
 
     # fill in design variable vector based on the initial design
-    update_dv_from_geom()
+    update_dv_from_geom(FE,OPT,GEOM)
 
     # set the current design to the initial design:
+    GEOM['current_design'] = {}
     GEOM['current_design']['point_matrix'] = GEOM['initial_design']['point_matrix']
     GEOM['current_design']['bar_matrix'] = GEOM['initial_design']['bar_matrix']
 
     # consider the bar design variables
-    # x_1b, x_2b, alpha_b, r_b
-
+    # Extract index of first and secont point of each bar
     x_1b_id = GEOM['current_design']['bar_matrix'][:,1]
     x_2b_id = GEOM['current_design']['bar_matrix'][:,2]
+    # Extract index of first (second) point of each matrix
+    pt1 = GEOM['point_mat_row'][x_1b_id,0].toarray()
+    pt2 = GEOM['point_mat_row'][x_2b_id,0].toarray()
 
-    pt1 = GEOM['point_mat_row'][x_1b_id]
-    pt2 = GEOM['point_mat_row'][x_2b_id]
-
-    pt_dv = reshape(OPT['point_dv'][:],(FE['dim'],GEOM['n_point']))
+    pt_dv = np.reshape(OPT['point_dv'][:],(FE['dim'],GEOM['n_point']))
 
     OPT['bar_dv'] = ( pt_dv[:,pt1] , pt_dv[:,pt2] ,
         OPT['size_dv'] , OPT['radius_dv'] )
 
 
 def runfmincon(OPT,GEOM,FE,x0,obj,nonlcon):
-# Perform the optimization using Matlab's fmincon
+    # Perform the optimization using Matlab's fmincon
 
     # Initialize history object
     history['x'] = {}
@@ -157,7 +162,7 @@ def runfmincon(OPT,GEOM,FE,x0,obj,nonlcon):
     #         strcmp(OPT['options']['write_to_vtk'] == 'last'
     #     writevtk(OPT['options']['vtk_output_path'], 'dens', optim_output.iterations)
    
-# =========================================================================
+    # =========================================================================
 
     def output(x,optimValues,state):
         stop = False

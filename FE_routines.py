@@ -189,7 +189,7 @@ def jacobian( FE,OPT,GEOM, xi , eta , argA , *argB ):
 
     elif 1 == len( argB ):
         zeta = argA
-        elem = argB
+        elem = argB[0]
 
         grad = gradient( FE,OPT,GEOM, xi , eta , zeta )
         jac = np.matmul( grad , FE['coords'][:,FE['elem_node'][:,elem]].T )
@@ -222,19 +222,19 @@ def gradient( FE,OPT,GEOM, xi , eta , *zeta ):
 
 
 def B( GN ):
-    if 3 == GN.shape()[0]:
-        B = np.array( ( ( GN(1,1) , 0 ,  GN(1,2) , 0 , GN(1,3) , 0 , GN(1,4) , 0 ) , \
-            ( 0       , GN(2,1) , 0       , GN(2,2) , 0       , GN(2,3) , 0       , GN(2,4) ) , \
-            ( GN(2,1) , GN(1,1) , GN(2,2) , GN(1,2) , GN(2,3) , GN(1,3) , GN(2,4) , GN(1,4) ) ) )
-    elif 6 == GN.shape()[0]:
-        B = np.array( ( ( GN(1,1) , 0 , 0 , GN(1,2) , 0       , 0       , GN(1,3) , 0       , 0       , GN(1,4) , 0       , 0       , GN(1,5) , 0       , 0       , GN(1,6) , 0       , 0       , GN(1,7) , 0       , 0       , GN(1,8) , 0       , 0       ) , \
-            ( 0       , GN(2,1) , 0       , 0       , GN(2,2) , 0       , 0       , GN(2,3) , 0       , 0       , GN(2,4) , 0       , 0       , GN(2,5) , 0       , 0       , GN(2,6) , 0       , 0       , GN(2,7) , 0       , 0       , GN(2,8) , 0       ) , \
-            ( 0       , 0       , GN(3,1) , 0       , 0       , GN(3,2) , 0       , 0       , GN(3,3) , 0       , 0       , GN(3,4) , 0       , 0       , GN(3,5) , 0       , 0       , GN(3,6) , 0       , 0       , GN(3,7) , 0       , 0       , GN(3,8) ) , \
-            ( GN(2,1) , GN(1,1) , 0       , GN(2,2) , GN(1,2) , 0       , GN(2,3) , GN(1,3) , 0       , GN(2,4) , GN(1,4) , 0       , GN(2,5) , GN(1,5) , 0       , GN(2,6) , GN(1,6) , 0       , GN(2,7) , GN(1,7) , 0       , GN(2,8) , GN(1,8) , 0       ) , \
-            ( 0       , GN(3,1) , GN(2,1) , 0       , GN(3,2) , GN(2,2) , 0       , GN(3,3) , GN(2,3) , 0       , GN(3,4) , GN(2,4) , 0       , GN(3,5) , GN(2,5) , 0       , GN(3,6) , GN(2,6) , 0       , GN(3,7) , GN(2,7) , 0       , GN(3,8) , GN(2,8) ) , \
-            ( GN(3,1) , 0       , GN(1,1) , GN(3,2) , 0       , GN(1,2) , GN(3,3) , 0       , GN(1,3) , GN(3,4) , 0       , GN(1,4) , GN(3,5) , 0       , GN(1,5) , GN(3,6) , 0       , GN(1,6) , GN(3,7) , 0       , GN(1,7) , GN(3,8) , 0       , GN(1,8) ) ) )
+    if 2 == GN.shape[0]:
+        B_ = np.array( ( ( GN[0,0] , 0 ,  GN[0,1] , 0 , GN[0,2] , 0 , GN[0,3] , 0 ) , \
+            ( 0       , GN[1,0] , 0       , GN[1,1] , 0       , GN[1,2] , 0       , GN[1,3] ) , \
+            ( GN[1,0] , GN[0,0] , GN[1,1] , GN[0,1] , GN[1,2] , GN[0,2] , GN[1,3] , GN[0,3] ) ) )
+    elif 3 == GN.shape[0]:
+        B_ = np.array( ( ( GN[0,0] , 0 , 0 , GN[0,1] , 0       , 0       , GN[0,2] , 0       , 0       , GN[0,3] , 0       , 0       , GN[0,4] , 0       , 0       , GN[0,5] , 0       , 0       , GN[0,6] , 0       , 0       , GN[0,7] , 0       , 0       ) , \
+            ( 0       , GN[1,0] , 0       , 0       , GN[1,1] , 0       , 0       , GN[1,2] , 0       , 0       , GN[1,3] , 0       , 0       , GN[1,4] , 0       , 0       , GN[1,5] , 0       , 0       , GN[1,6] , 0       , 0       , GN[1,7] , 0       ) , \
+            ( 0       , 0       , GN[2,0] , 0       , 0       , GN[2,1] , 0       , 0       , GN[2,2] , 0       , 0       , GN[2,3] , 0       , 0       , GN[2,4] , 0       , 0       , GN[2,5] , 0       , 0       , GN[2,6] , 0       , 0       , GN[2,7] ) , \
+            ( GN[1,0] , GN[0,0] , 0       , GN[1,1] , GN[0,1] , 0       , GN[1,2] , GN[0,2] , 0       , GN[1,3] , GN[0,3] , 0       , GN[1,4] , GN[0,4] , 0       , GN[1,5] , GN[0,5] , 0       , GN[1,6] , GN[0,6] , 0       , GN[1,7] , GN[0,7] , 0       ) , \
+            ( 0       , GN[2,0] , GN[1,0] , 0       , GN[2,1] , GN[1,1] , 0       , GN[2,2] , GN[1,2] , 0       , GN[2,3] , GN[1,3] , 0       , GN[2,4] , GN[1,4] , 0       , GN[2,5] , GN[1,5] , 0       , GN[2,6] , GN[1,6] , 0       , GN[2,7] , GN[1,7] ) , \
+            ( GN[2,0] , 0       , GN[0,0] , GN[2,1] , 0       , GN[0,1] , GN[2,2] , 0       , GN[0,2] , GN[2,3] , 0       , GN[0,3] , GN[2,4] , 0       , GN[0,4] , GN[2,5] , 0       , GN[0,5] , GN[2,6] , 0       , GN[0,6] , GN[2,7] , 0       , GN[0,7] ) ) )
 
-    return B
+    return B_
 
 
 def FE_compute_element_stiffness(FE,OPT,GEOM,C):
@@ -263,16 +263,15 @@ def FE_compute_element_stiffness(FE,OPT,GEOM,C):
                     eta = gauss_pt[j]
                     
                     # Compute Jacobian
-                    J       = jacobian( FE,OPT,GEOM,xi,eta,e)
-                    print(J)
+                    J       = jacobian(FE,OPT,GEOM,xi,eta,e)
                     det_J   = np.linalg.det(J)
                     inv_J   = np.linalg.inv(J)
-                    
-                    # Compute shape function derivatives (strain displacement matrix)  
-                    GN = inv_J * gradient( FE,OPT,GEOM,xi,eta)
-                    B = B(GN)
 
-                    Ke[:,:,e] = Ke[:,:,e] + W[i] * W[j] * det_J * B.T * C * B
+                    # Compute shape function derivatives (strain displacement matrix)  
+                    GN = inv_J @ gradient(FE,OPT,GEOM,xi,eta)
+                    B_ = B(GN)  
+
+                    Ke[:,:,e] = Ke[:,:,e] + W[i] * W[j] * det_J * B_.T @ C @ B_
                 
                 elif 3 == FE['dim']:
                     for k in range(0,num_gauss_pt):
@@ -284,10 +283,10 @@ def FE_compute_element_stiffness(FE,OPT,GEOM,C):
                         inv_J   = np.linalg.inv(J)
                         
                         # Compute shape function derivatives (strain displacement matrix)  
-                        GN = inv_J * gradient( FE,OPT,GEOM,xi,eta,zeta)
-                        B = B(GN)
+                        GN = inv_J @ gradient( FE,OPT,GEOM,xi,eta,zeta)
+                        B_ = B(GN)
                         
-                        Ke[:,:,e] = Ke[:,:,e] + W[i] * W[j] * W[k] * det_J * B.T * C * B
+                        Ke[:,:,e] = Ke[:,:,e] + W[i] * W[j] * W[k] * det_J * B_.T @ C @ B_
 
         if det_J < 0:
             bad_elem[e] = True 

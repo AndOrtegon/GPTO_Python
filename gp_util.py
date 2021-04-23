@@ -1,23 +1,24 @@
 import numpy as np
+import scipy.sparse as sp
 
-def init_geometry():
+def init_geometry(FE,OPT,GEOM):
     #
     # Initialize GEOM structure with initial design
     #
-    global GEOM
 
     if not GEOM['initial_design']['restart']:
-        #run(GEOM['initial_design'].path)
+        exec( open(GEOM['initial_design']['path']).read() )
         
         # To use non contiguous numbers in the point_mat, we need to grab the
         # points whose ID matches the number specified by bar_mat. We achieve 
         # this via a map (sparse vector) between point_mat_rows and pt_IDs st
-        # point_mat_row(point_ID) = row # of point_mat for point_ID
-
+        # point_mat_row(point_ID) = row # of point_mat for point_ID        
         pt_IDs = GEOM['initial_design']['point_matrix'][:,0]
-        #GEOM.point_mat_row = sparse(pt_IDs,1,[1:length(pt_IDs)])
+        
+        GEOM['point_mat_row'] = sp.csc_matrix( (np.arange(0,pt_IDs.shape[0]),
+            (pt_IDs.astype(int), np.zeros(pt_IDs.shape[0],dtype=int) ) ) )
     else:
-        #load(GEOM['initial_design'].path)
+        exec( open(GEOM['initial_design']['path']).read() )
         GEOM['initial_design']['point_matrix'] = GEOM['current_design']['point_matrix']
         GEOM['initial_design']['bar_matrix'] = GEOM['current_design']['bar_matrix']
     
@@ -35,8 +36,8 @@ def init_geometry():
     GEOM['n_bar']   = np.size( GEOM['initial_design']['bar_matrix'] , 0 )
 
 
-def compute_bar_elem_distance():
-    global FE, GEOM, OPT
+def compute_bar_elem_distance(FE,OPT,GEOM):
+    # global FE, GEOM, OPT
 
     tol = 1e-12
 
@@ -162,7 +163,7 @@ def penalize(*args):
     return P(x) , dPdx(x)
 
 
-def project_element_densities():
+def project_element_densities(FE,OPT,GEOM):
     # This def computes the combined unpenalized densities (used to
     # compute the volume) and penalized densities (used to compute the ersatz
     # material for the analysis) and saves them in the global variables
@@ -172,8 +173,6 @@ def project_element_densities():
     # densities with respect to the design parameters, and saves them in the
     # global variables FE['Delem_dens_Ddv'] and FE['Dpenalized_elem_dens_Ddv']. 
     #
-
-    global FE, GEOM, OPT
 
     ##  Distances from the element centroids to the medial segment of each bar
     d_be , Dd_be_Dbar_s = compute_bar_elem_distance()
@@ -330,7 +329,7 @@ def smooth_max(x,p,form_def,x_min):
     return S, dSdx
 
 
-def update_dv_from_geom():
+def update_dv_from_geom(FE,OPT,GEOM):
     #
     # This def updates the values of the design variables (which will be
     # scaled if OPT.options['dv']_scaling is true) based on the unscaled bar 
@@ -338,25 +337,27 @@ def update_dv_from_geom():
     # update_geom_from_dv.
     #
 
-    global GEOM, OPT 
+    # global GEOM, OPT 
 
     # Fill in design variable vector based on the initial design
-    # Eq. (32)
-    OPT['dv'][ OPT['point_dv'] ] = ( np.transpose( GEOM['initial_design']['point_matrix'][:,2:] ) \
-        - OPT['scaling']['point_min'] ) / OPT['scaling']['point_scale']
-    OPT['dv'][ OPT['size_dv'] ] = GEOM['initial_design']['bar_matrix'][:,-2]
-    OPT['dv'][ OPT['radius_dv'] ] = ( GEOM['initial_design']['bar_matrix'][:,-1] \
+    # Eq. (32
+    OPT['dv'][ OPT['point_dv'],0 ] = ( ( GEOM['initial_design']['point_matrix'][:,1:] -
+        OPT['scaling']['point_min'] ) / OPT['scaling']['point_scale'] ).flatten()
+    
+    OPT['dv'][ OPT['size_dv'],0 ] = GEOM['initial_design']['bar_matrix'][:,-2]
+
+    OPT['dv'][ OPT['radius_dv'],0 ] = ( GEOM['initial_design']['bar_matrix'][:,-1] \
         - OPT['scaling']['radius_min'] ) / OPT['scaling']['radius_scale'] 
 
 
-def update_geom_from_dv():
+def update_geom_from_dv(FE,OPT,GEOM):
     #
     # This def updates the values of the unscaled bar geometric parameters
     # from the values of the design variableds (which will be scaled if
     # OPT.options['dv']_scaling is true). It does the
     # opposite from the def update_dv_from_geom.
     #
-    global GEOM , OPT , FE
+    # global GEOM , OPT , FE
 
     # Eq. (32)
     GEOM['current_design']['point_matrix'][:,12:] = \

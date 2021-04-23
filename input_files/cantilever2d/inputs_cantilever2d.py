@@ -101,7 +101,7 @@ FE['material']['nu_void'] = 0.3  # Poisson ratio of the void material
 # that initializes the geometry otherwise, it should be the path to a
 # .mat file previously saved by the code
 GEOM['initial_design'] = { 
-    'path':'input_files/cantilever2d/initial_cantilever2d_geometry.m' ,
+    'path':'input_files/cantilever2d/initial_cantilever2d_geometry.py' ,
     'plot':plot_cond ,
     'restart':False}
 

@@ -40,16 +40,16 @@ def generate_mesh(FE,O_pt,GEOM):
     x_i = {}
     for i in range(0,FE['dim']):
         x_i[i]  = np.linspace( 0 , box_dimensions[i] , num = n_i[i] )
-    
+
     FE['n_elem'] = np.prod( elements_per_side[:] )
     FE['n_node'] = np.prod( elements_per_side[:]+1 )
 
     if 2 == FE['dim']:
         xx, yy      = np.meshgrid( x_i[0] , x_i[1] )
-        node_coords = np.stack( ( xx.flatten(), yy.flatten() ) , axis = 1 ) 
+        node_coords = np.stack( ( xx.T.flatten(), yy.T.flatten() ) , axis = 1 ) 
     elif 3 == FE['dim']:
         xx, yy, zz  = np.meshgrid( x_i[0] , x_i[1] , x_i[2] )
-        node_coords = np.stack( ( xx.flatten(), yy.flatten(), zz.flatten() ) , axis = 1 )
+        node_coords = np.stack( ( xx.T.flatten(), yy.T.flatten(), zz.T.flatten() ) , axis = 1 )
 
     ## define element connectivity
     elem_mat = np.zeros( ( FE['n_elem'] , 2**FE['dim'] ) )

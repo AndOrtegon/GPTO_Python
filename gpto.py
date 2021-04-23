@@ -58,6 +58,7 @@ import time
 from gp_util import *
 from mesh_util import *
 from FE_routines import *
+from optimization import *
 #from utilities import *
 
 #addpath(genpath('optimization'))
@@ -71,7 +72,7 @@ tic = time.perf_counter()
 
 init_FE(FE,OPT,GEOM)
 init_geometry(FE,OPT,GEOM)
-# init_optimization()
+init_optimization(FE,OPT,GEOM)
 
 # # load('matlab.mat','GEOM') update_dv_from_geom
 
