@@ -5,9 +5,9 @@ from mesh_util import *
 def FE_analysis(FE,OPT,GEOM):
     # Assemble the Global stiffness matrix and solve the FEA
     # Assemble the stiffness matrix partitions Kpp Kpf Kff
-    FE_assemble_stiffness_matrix()
+    FE_assemble_stiffness_matrix(FE,OPT,GEOM)
     # Solve the displacements and reaction forces
-    FE_solve()
+    FE_solve(FE,OPT,GEOM)
 
 
 def FE_assemble_BC(FE,OPT,GEOM):
@@ -53,17 +53,19 @@ def FE_assemble_stiffness_matrix(FE,OPT,GEOM):
 
     ## assemble and partition the global stiffness matrix
     # Retrieve the penalized stiffness
-    penalized_rho_e = np.repeat( OPT['penalized_elem_dens'].flatten() , 
-        (1,FE['n_edof'],FE['n_edof']) ).swapaxes(0,1).swapaxes(1,2)
+    penalized_rho_e = np.tile( OPT['penalized_elem_dens'][:,None,None] , 
+        (1,FE['n_edof'],FE['n_edof']) ).transpose((1,2,0))
             
     # Ersatz material: (Eq. (7))
     penalized_Ke = penalized_rho_e * FE['Ke']
-    FE['sK_penal'] = penalized_Ke.flatten()
+    FE['sK_penal'] = penalized_Ke.flatten('F')
 
     # assemble the penalized global stiffness matrix
-    K = sparse( FE['iK'] , FE['jK'] , FE['sK_penal'] )
+    K = sp.csc_matrix( ( FE['sK_penal'] , ( FE['iK'] , FE['jK'] ) ) )
 
     # partition the stiffness matrix and return these partitions to FE
+    print( FE['fixeddofs_ind'].shape )
+    print( FE['freedofs_ind'].shape )
     FE['Kpp'] = K[ FE['fixeddofs_ind'] , FE['fixeddofs_ind'] ]
     FE['Kfp'] = K[ FE['freedofs_ind'] , FE['fixeddofs_ind'] ]
 
@@ -343,23 +345,23 @@ def FE_init_partitioning(FE,OPT,GEOM):
     FE['n_edof'] = n_elem_dof
 
     n, m = np.shape( FE['elem_node'] )
-    FE['edofMat'] = np.zeros( ( m , n*FE['dim'] ) )
+    FE['edofMat'] = np.zeros( ( m , n*FE['dim'] ), dtype=int )
 
     for elem in range(0,m):
         enodes = FE['elem_node'][:,elem]
         if 2 == FE['dim']:
-            edofs = np.reshape( np.stack( ( 2*enodes-1 , 2*enodes ) , axis=1 ).T ,
-                ( 1 , n_elem_dof ) )
+            edofs = ( np.stack( ( 2*enodes , 2*enodes+1 ) , axis=1 ) )\
+                .reshape( ( 1 , n_elem_dof ) )
         elif 3 == FE['dim']:
-            edofs = np.reshape( np.stack( ( 3*enodes-2 , 3*enodes-1 , 3*enodes ) , axis=1 ).T ,
-                ( 1 , n_elem_dof ) )
+            edofs = ( np.stack( ( 3*enodes , 3*enodes+1 , 3*enodes+2 ) , axis=1 ) )\
+                .reshape( ( 1 , n_elem_dof ) )
         
         FE['edofMat'][elem,:] = edofs
 
-    FE['iK'] = np.reshape( np.kron( FE['edofMat'] , np.ones((n_elem_dof,1)) ).T , 
-        ( FE['n_elem']*n_elem_dof**2 , 1 ) )
-    FE['jK'] = np.reshape( np.kron( FE['edofMat'] , np.ones((1,n_elem_dof)) ).T , 
-        ( FE['n_elem']*n_elem_dof**2 , 1 ) )
+    FE['iK'] = ( np.kron( FE['edofMat'] , np.ones((n_elem_dof,1),dtype=int) ).T )\
+        .reshape( FE['n_elem']*n_elem_dof**2 , order='F' )
+    FE['jK'] = ( np.kron( FE['edofMat'] , np.ones((1,n_elem_dof),dtype=int) ).T )\
+        .reshape( FE['n_elem']*n_elem_dof**2 , order='F' )
 
 
 def FE_solve(FE,OPT,GEOM):

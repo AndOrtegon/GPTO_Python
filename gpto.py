@@ -59,10 +59,8 @@ from gp_util import *
 from mesh_util import *
 from FE_routines import *
 from optimization import *
-#from utilities import *
+from utilities import *
 
-#addpath(genpath('optimization'))
-#addpath(genpath('utilities'))
 #addpath(genpath('plotting'))
 
 ## Start timer
@@ -77,7 +75,7 @@ init_optimization(FE,OPT,GEOM)
 # # load('matlab.mat','GEOM') update_dv_from_geom
 
 # ## Analysis
-# perform_analysis() 
+perform_analysis(FE,OPT,GEOM) 
 
 ## Finite difference check of sensitivities
 # (If requested)

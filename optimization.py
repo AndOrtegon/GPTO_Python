@@ -37,7 +37,7 @@ def init_optimization(FE,OPT,GEOM):
         # compute sampling radius
         # The radius corresponds to the circle (or sphere) that circumscribes a
         # square (or cube) that has the edge length of elem_size.
-        OPTOPT['parameters']['elem_r'] = sqrt(FE['dim'])/2 * FE.elem_vol*(1/FE['dim']) 
+        OPT['parameters']['elem_r'] = np.sqrt(FE['dim'])/2 * FE['elem_vol']*(1/FE['dim']) 
     
     ##
     # Initilize the design variable and its indexing schemes
@@ -49,8 +49,8 @@ def init_optimization(FE,OPT,GEOM):
     OPT['dv']   = np.zeros( (OPT['n_dv'],1) )
 
     OPT['point_dv']  = np.arange(0,FE['dim']*GEOM['n_point']) # such that dv(point_dv) = point
-    OPT['size_dv']   = OPT['point_dv'][-1] + np.arange(0,GEOM['n_bar'])
-    OPT['radius_dv'] = OPT['size_dv'][-1] + np.arange(0,GEOM['n_bar'])
+    OPT['size_dv']   = OPT['point_dv'][-1] + 1 + np.arange(0,GEOM['n_bar'])
+    OPT['radius_dv'] = OPT['size_dv'][-1] + 1 + np.arange(0,GEOM['n_bar'])
 
     if OPT['options']['dv_scaling']:
         OPT['scaling'] = {}
@@ -84,14 +84,16 @@ def init_optimization(FE,OPT,GEOM):
     # Extract index of first and secont point of each bar
     x_1b_id = GEOM['current_design']['bar_matrix'][:,1]
     x_2b_id = GEOM['current_design']['bar_matrix'][:,2]
+    
     # Extract index of first (second) point of each matrix
     pt1 = GEOM['point_mat_row'][x_1b_id,0].toarray()
     pt2 = GEOM['point_mat_row'][x_2b_id,0].toarray()
-
-    pt_dv = np.reshape(OPT['point_dv'][:],(FE['dim'],GEOM['n_point']))
-
-    OPT['bar_dv'] = ( pt_dv[:,pt1] , pt_dv[:,pt2] ,
-        OPT['size_dv'] , OPT['radius_dv'] )
+    
+    pt_dv = np.reshape(OPT['point_dv'][:],(GEOM['n_point'],FE['dim'])).T
+    
+    OPT['bar_dv'] = np.concatenate( ( pt_dv[:,pt1][:,:,0] , pt_dv[:,pt2][:,:,0] ,
+        OPT['size_dv'].reshape((1,-1)) , OPT['radius_dv'].reshape((1,-1)) ) , axis = 0 )
+    # print( OPT['bar_dv'] ) 
 
 
 def runfmincon(OPT,GEOM,FE,x0,obj,nonlcon):

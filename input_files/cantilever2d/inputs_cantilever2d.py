@@ -148,7 +148,7 @@ OPT['functions']['constraint_limit'] = [0.3]
 # 
 OPT['parameters'] = {}
 
-OPT['parameters']['elem_r'] = .1   # Eq. (34)
+# OPT['parameters']['elem_r'] = .1   # Eq. (34)
 #
 # Type of smooth maximum function for aggregation (Boolean union)
 # Options are: 'mod_p-norm', 'mod_p-mean', 'KS', and 'KS_under'

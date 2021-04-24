@@ -1,9 +1,11 @@
 import numpy as np
+from gp_util import *
+from FE_routines import *
 
-def compute_compliance():
+def compute_compliance(FE,OPT,GEOM):
     # This function computes the mean compliance and its sensitivities
     # based on the last finite element analysis
-    global FE, OPT
+    # global FE, OPT
 
     # compute the compliance (Eq. (15))
     #c = full( np.dot( FE['U , FE['P ) )
@@ -25,12 +27,13 @@ def compute_compliance():
 
     return c , grad_c
 
-def compute_volume_fraction():
+
+def compute_volume_fraction(FE,OPT,GEOM):
     #
     # This function computes the volume fraction and its sensitivities
     # based on the last geometry projection
     #
-    global FE, OPT
+    # global FE, OPT
 
     # compute the volume fraction
     v_e = FE['elem_vol'] # element
@@ -49,22 +52,22 @@ def compute_volume_fraction():
     return volfrac , grad_vofrac
 
 
-def evaluate_relevant_functions():
+def evaluate_relevant_functions(FE,OPT,GEOM):
     # Evaluate_relevant_functions() looks at OPT['functions'] and evaluates the
     # relevant functions for this problem based on the current OPT['dv']
-    global OPT
+    # global OPT
 
     OPT['functions']['n_func'] =  numel(OPT['functions']['f'])
 
     for i in range(0,OPT['functions']['n_func']):
-        value , grad = feval(OPT['functions'].f{i}.function)
-        OPT['functions'].f{i}.value = value
-        OPT['functions'].f{i}.grad = grad
+        value , grad = feval(OPT['functions']['f'][i].function)
+        OPT['functions']['f'][i].value = value
+        OPT['functions']['f'][i].grad = grad
 
 
 def nonlcon(dv):
     # [g, geq, gradg, gradgeq] = nonlcon(dv) returns the costraints
-    global  OPT
+    # global  OPT
     
     OPT['dv_old'] = OPT['dv']
     OPT['dv'] = dv
@@ -80,10 +83,10 @@ def nonlcon(dv):
     gradg   = np.zeros(OPT['n_dv,n_con'])
 
     for i in range(0,n_con):
-        g[i] = OPT['functions'].f{i+1}.value
-            g = g - OPT['functions'].
+        g[i] = OPT['functions']['f'][i+1].value
+        g    = g - OPT['functions']['constraint_limit']
         
-        gradg[:,i] = OPT['functions'].f{i+1}.grad
+        gradg[:,i] = OPT['functions']['f'][i+1].grad
 
     geq = np.empty
     gradgeq = np.empty
@@ -91,29 +94,29 @@ def nonlcon(dv):
     return g, geq, gradg, gradgeq
 
 
-def = obj(dv):
+def obj(dv):
     global  OPT
     
     OPT['dv_old'] = OPT['dv'] # save the previous design
     OPT['dv'] = dv # update the design
     
     
-    if OPT['dv'] !== OPT['dv_old']:
+    if OPT['dv'] != OPT['dv_old']:
         # If different, update or perform the analysis
-        update_geom_from_dv()
-        perform_analysis()
+        update_geom_from_dv(FE,OPT,GEOM)
+        perform_analysis(FE,OPT,GEOM)
 
-    f = OPT['functions'].f{1}.value
-    gradf = OPT['functions'].f{1}.grad
+    f = OPT['functions']['f'][i].value
+    gradf = OPT['functions']['f'][i].grad
     
     return f, gradf
 
 
-def perform_analysis():
+def perform_analysis(FE,OPT,GEOM):
     # Perform the geometry projection, solve the finite
     # element problem for the displacements and reaction forces, and then
     # evaluate the relevant functions.
-    project_element_densities()
-    FE_analysis()
-    evaluate_relevant_functions()
+    project_element_densities(FE,OPT,GEOM)
+    FE_analysis(FE,OPT,GEOM)
+    evaluate_relevant_functions(FE,OPT,GEOM)
 
