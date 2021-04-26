@@ -1,4 +1,5 @@
 import numpy as np
+from scipy.sparse import linalg
 import scipy.sparse as sp
 from mesh_util import *
 
@@ -64,16 +65,14 @@ def FE_assemble_stiffness_matrix(FE,OPT,GEOM):
     K = sp.csc_matrix( ( FE['sK_penal'] , ( FE['iK'] , FE['jK'] ) ) )
 
     # partition the stiffness matrix and return these partitions to FE
-    print( FE['fixeddofs_ind'].shape )
-    print( FE['freedofs_ind'].shape )
-    FE['Kpp'] = K[ FE['fixeddofs_ind'] , FE['fixeddofs_ind'] ]
-    FE['Kfp'] = K[ FE['freedofs_ind'] , FE['fixeddofs_ind'] ]
+    FE['Kpp'] = K[FE['fixeddofs_ind'],:][:,FE['fixeddofs_ind']]
+    FE['Kfp'] = K[FE['freedofs_ind'] ,:][:,FE['fixeddofs_ind']]
 
     # note: by symmetry Kpf = Kfp', so we don't store Kpf. Tall and thin
     # matrices are stored more efficiently as sparse matrices, and since we
     # generally have more free dofs than fixed, we choose to store the rows as
     # free dofs to save on memory.
-    FE['Kff'] = K[ FE['freedofs_ind'] , FE['freedofs_ind'] ]
+    FE['Kff'] = K[FE['freedofs_ind'] ,:][:,FE['freedofs_ind']]
 
 
 def FE_compute_constitutive_matrices(FE,OPT,GEOM):
@@ -373,15 +372,17 @@ def FE_solve(FE,OPT,GEOM):
     p = FE['fixeddofs_ind']
     f = FE['freedofs_ind']
 
+
     # save the system RHS
-    FE['rhs'] = FE['P'](F) - np.matmul( FE['Kfp'] , FE['U'](p) )
+    FE['rhs'] = FE['P'][f] - FE['Kfp'] @ FE['U'][p]
 
     if 'direct' == FE['analysis']['solver']['type']:
-        if FE['analysis']['solver'].use_gpu == True:
+        if FE['analysis']['solver']['use_gpu'] == True:
             print('GPU solver selected, but only available for iterative solver, solving on CPU.')
-        #FE['analysis']['solver'].use_gpu = False
+        FE['analysis']['solver']['use_gpu'] = False
         
-        #FE['U'](F) = FE['Kff']\FE['rhs']
+        FE['U'][f] = linalg.spsolve( FE['Kff'] , FE['rhs'] )[:,None]
+
     elif 'iterative' == FE['analysis']['solver']['type']:
         tol = FE['analysis']['solver'].tol
         maxit = FE['analysis']['solver'].maxit
@@ -415,7 +416,7 @@ def FE_solve(FE,OPT,GEOM):
             print(msg)
 
     # solve the reaction forces:
-    FE['P'][p] = FE['Kpp']*FE['U'](p) + np.matmul( FE['Kfp'].T , FE['U'][F] )
+    FE['P'][p] = FE['Kpp'] @ FE['U'][p] + FE['Kfp'].T @ FE['U'][f]
 
 
 def init_FE(FE,OPT,GEOM):
