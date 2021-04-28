@@ -74,24 +74,20 @@ def nonlcon(dv):
     
     if OPT['dv'] != OPT['dv_old']:
         # Update or perform the analysis
-
         update_geom_from_dv() # update GEOM for this design
         perform_analysis()
 
-    n_con   = OPT['functions'].n_func-1 # number of constraints
+    n_con   = OPT['functions']['n_func']-1 # number of constraints
     g       = np.zeros(n_con,1)
     gradg   = np.zeros(OPT['n_dv,n_con'])
 
     for i in range(0,n_con):
-        g[i] = OPT['functions']['f'][i+1].value
+        g[i] = OPT['functions']['f'][i+1]['value']
         g    = g - OPT['functions']['constraint_limit']
         
         gradg[:,i] = OPT['functions']['f'][i+1].grad
 
-    geq = np.empty
-    gradgeq = np.empty
-
-    return g, geq, gradg, gradgeq
+    return g, geq
 
 
 def obj(dv):
@@ -106,10 +102,10 @@ def obj(dv):
         update_geom_from_dv(FE,OPT,GEOM)
         perform_analysis(FE,OPT,GEOM)
 
-    f = OPT['functions']['f'][i].value
-    gradf = OPT['functions']['f'][i].grad
+    f = OPT['functions']['f'][0]['value']
+    # gradf = OPT['functions']['f'][0]['grad']
     
-    return f, gradf
+    return f
 
 
 def perform_analysis(FE,OPT,GEOM):

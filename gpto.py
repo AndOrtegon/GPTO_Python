@@ -1,4 +1,3 @@
-
 # =========================================================================
 # 
 # GPTO
@@ -79,15 +78,14 @@ perform_analysis(FE,OPT,GEOM)
 
 ## Finite difference check of sensitivities
 # (If requested)
-# if OPT.make_fd_check:
-#     run_finite_difference_check()
-#     return  # End code here
+if OPT['make_fd_check']:
+    run_finite_difference_check()
 
 # ## Optimization
-# if  'fmincon-active-set' == OPT.options.optimizer:
-#   OPT.history = runfmincon(OPT.dv,@(x)obj(x),@(x)nonlcon(x))
-# elif 'mma' ==  == OPT.options.optimizer:
-#     OPT.history = runmma(OPT.dv,@(x)obj(x),@(x)nonlcon(x))
+if  'fmincon-active-set' == OPT['options']['optimizer']:
+    OPT['history'] = runfmincon(OPT.dv,@(x)obj(x),@(x)nonlcon(x))
+elif 'mma' == OPT['options']['optimizer']:
+    OPT.history = runmma(OPT.dv,@(x)obj(x),@(x)nonlcon(x))
 
 # ## Plot History
 # if True == OPT.options.plot:

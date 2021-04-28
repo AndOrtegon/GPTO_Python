@@ -1,4 +1,5 @@
 import numpy as np
+from scipy.optimize import minimize
 import scipy.sparse as sp 
 from gp_util import *
 
@@ -104,22 +105,6 @@ def runfmincon(OPT,GEOM,FE,x0,obj,nonlcon):
     history['fval'] = {}
     history['fconsval'] = {}
 
-    # # call optimization
-    # options = optimoptions(@fmincon,\
-    #     'OutputFcn', output,
-    #     'PlotFcn', plotfun,
-    #     'Algorithm','active-set', \
-    #     'FiniteDifferenceStepSize', 1e-5, \
-    #     'SpecifyObjectiveGradient',True,\
-    #     'SpecifyConstraintGradient',True,\
-    #     'RelLineSrchBnd', OPT['options']['move_limit'], \ 
-    #     'RelLineSrchBndDuration', OPT['options']['max_iter'], \
-    #     'ConstraintTolerance', 1e-3, \
-    #     'MaxIterations',OPT['options']['max_iter'], \
-    #     'OptimalityTolerance',OPT['options']['kkt_tol'], \      
-    #     'StepTolerance',OPT['options']['step_tol'],\
-    #     'Display', 'iter') # 
-        
     # x0                
     A = []
     b = []
@@ -130,6 +115,7 @@ def runfmincon(OPT,GEOM,FE,x0,obj,nonlcon):
         lb_point = np.zeros( (FE['dim'],1) )
         ub_point = np.ones( (FE['dim'],1) )
         lb_radius = 0
+
         # Consider case when max_bar_radius and min_bar_radius are
         # the same (when bars are of fixed radius)
         if GEOM['max_bar_radius'] - GEOM['min_bar_radius'] < 1e-12:
@@ -145,13 +131,14 @@ def runfmincon(OPT,GEOM,FE,x0,obj,nonlcon):
     lb_size = 0    # Eq. (20)
     ub_size = 1    # Eq. (20)
 
-    lb_bar = np.array( (lb_pointlb_point, lb_sizelb_radius) )
-    ub_bar = np.array( (ub_pointub_point, ub_sizeub_radius) )
+    lb_bar = np.array( (lb_point, lb_point, lb_size, lb_radius) )
+    ub_bar = np.array( (ub_point, ub_point, ub_size, ub_radius) )
 
-    lb = np.zeros( (OPT['dv'].shape) )
-    ub = np.zeros( (OPT['dv'].shape) )
-    lb[OPT['bar_dv']] = repmat(lb_bar,1,GEOM['n_bar'])
-    ub[OPT['bar_dv']] = repmat(ub_bar,1,GEOM['n_bar'])
+    lb = np.zeros( OPT['dv'].shape )
+    ub = np.zeros( OPT['dv'].shape )
+
+    lb[OPT['bar_dv']] = lb_bar.repeat(GEOM['n_bar'],axis=1)
+    ub[OPT['bar_dv']] = ub_bar.repeat(GEOM['n_bar'],axis=1)
 
     # ******
     # This is the call to the optimizer
@@ -240,22 +227,21 @@ def runfmincon(OPT,GEOM,FE,x0,obj,nonlcon):
 
     return history    
 
+
 def runmma(OPT,GEOM,FE,x0,obj,nonlcon):
     #
     # Perform the optimization using MMA
-    #
-
-
-    # Initialize history object
-    history['x'] = {}
-    history['fval'] = {}
-    history['fconsval'] = {}
-
-    # Initialize lower and upper bounds vectors
+    
+    A = []
+    b = []
+    Aeq = []
+    beq = []
+    
     if OPT['options']['dv_scaling']:   # Eq. (33)
         lb_point = np.zeros( (FE['dim'],1) )
         ub_point = np.ones( (FE['dim'],1) )
         lb_radius = 0
+
         # Consider case when max_bar_radius and min_bar_radius are
         # the same (when bars are of fixed radius)
         if GEOM['max_bar_radius'] - GEOM['min_bar_radius'] < 1e-12:
@@ -267,19 +253,20 @@ def runmma(OPT,GEOM,FE,x0,obj,nonlcon):
         ub_point = FE['coord_max']            # Eq. (18)
         lb_radius = GEOM['min_bar_radius']    # Eq. (19)
         ub_radius = GEOM['max_bar_radius']    # Eq. (19)
-
+    
     lb_size = 0    # Eq. (20)
     ub_size = 1    # Eq. (20)
 
-    lb_bar = [lb_pointlb_pointlb_sizelb_radius]
-    ub_bar = [ub_pointub_pointub_sizeub_radius]
+    lb_bar = np.array( (lb_point, lb_point, lb_size, lb_radius) )
+    ub_bar = np.array( (ub_point, ub_point, ub_size, ub_radius) )
 
-    lb = np.zeros(OPT['dv'].shape)
-    ub = np.zeros(OPT['dv'].shape) 
+    lb = np.zeros( OPT['dv'].shape )
+    ub = np.zeros( OPT['dv'].shape )
 
-    lb[OPT['bar_dv']] = np.repmat(lb_bar,1,GEOM['n_bar'])
-    ub[OPT['bar_dv']] = np.repmat(ub_bar,1,GEOM['n_bar'])
+    lb[OPT['bar_dv']] = lb_bar.repeat(GEOM['n_bar'],axis=1)
+    ub[OPT['bar_dv']] = ub_bar.repeat(GEOM['n_bar'],axis=1)
 
+    
     ncons = OPT['functions']['n_func'] - 1  # Number of optimization constraints
     ndv = OPT['n_dv'] # Number of design variables
 
