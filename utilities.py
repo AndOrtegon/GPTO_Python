@@ -79,7 +79,7 @@ def nonlcon(dv):
 
     n_con   = OPT['functions']['n_func']-1 # number of constraints
     g       = np.zeros(n_con,1)
-    gradg   = np.zeros(OPT['n_dv,n_con'])
+    gradg   = np.zeros(OPT['n_dv'],n_con)
 
     for i in range(0,n_con):
         g[i] = OPT['functions']['f'][i+1]['value']

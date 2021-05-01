@@ -47,6 +47,7 @@
 ## source folders containing scripts not in this folder
 import time
 import numpy as np
+import matplotlib.pyplot as plt
 from scipy.optimize import minimize
 from scipy.optimize import Bounds
 from scipy.optimize import NonlinearConstraint
@@ -56,6 +57,173 @@ import scipy.sparse as sp
 OPT  = {}
 GEOM = {}
 FE   = {}
+
+def fd_check_cost():
+    # This function performs a finite difference check of the sensitivities of
+    # the COST function with respect to the bar design variables.
+    global OPT 
+
+    # Finitite diference sensitivities
+    n_dv = OPT['n_dv']
+    grad_theta_i = np.zeros( (n_dv,1) )
+
+    fd_step = OPT['fd_step_size']
+
+    max_error           = 0.0 
+    max_rel_error       = 0.0 
+    max_error_bar       = 0 
+    max_rel_error_bar   = 0 
+    dv_0 = OPT['dv'].copy() 
+    dv_i = OPT['dv'].copy()
+
+    theta_0, grad_theta_0 = obj(dv_0) 
+    
+    # Finite differences
+    print('Computing finite difference sensitivities...') 
+
+    # Do this for all design variables or only a few
+    up_to_dv = n_dv 
+
+    for i in range(0,up_to_dv):
+        # Preturb dv
+        dv_i[i] = dv_0[i] + fd_step 
+        theta_i , __ = obj(dv_i) 
+
+        grad_theta_i[i] = (theta_i - theta_0)/fd_step 
+
+        error = grad_theta_0[i] - grad_theta_i[i] 
+
+        if np.abs(error) > np.abs(max_error):
+            max_error = error 
+            max_error_dv = i 
+
+        rel_error = error / theta_0 
+        if np.abs(rel_error) > np.abs(max_rel_error):
+            max_rel_error = rel_error 
+            max_rel_error_dv = i    
+
+        dv_i = dv_0.copy() 
+
+    theta_0, grad_theta_0 = obj(dv_0)  # to reset the design
+
+    print('Max. ABSOLUTE error is:' )
+    print(max_error)
+    print('It occurs at:') 
+    print('\tvariable:' + str(max_error_dv) )
+
+    print('Max. RELATIVE error is:' )
+    print(max_rel_error)
+    print('It occurs at:') 
+    print('\tvariable:' + str(max_rel_error_dv) )
+
+    plt.figure(2)
+    plt.plot(grad_theta_i,'+')
+    plt.plot(grad_theta_0,'.')
+    # plt.legend('fd','analytical')
+    plt.title('cost function')
+    plt.xlabel('design variable z') 
+    plt.ylabel('dc/dz') 
+    plt.show()
+
+
+def fd_check_constraint():
+    # This function performs a finite difference check of the sensitivities of
+    # the CONSTRAINT function with respect to the bar design variables.
+    # It is currently setup for one constraint, but it can be easily modified
+    # for other/more constraints.
+    global OPT
+
+    # ===============================
+    # FINITE DIFFERENCE SENSITIVITIES
+    # ===============================
+    n_dv = OPT['n_dv']
+    grad_theta_i = np.zeros( (n_dv, 1) )
+
+    fd_step = OPT['fd_step_size']
+
+    max_error           = 0.0 
+    max_rel_error       = 0.0 
+    max_error_bar       = 0 
+    max_rel_error_bar   = 0 
+    
+    dv_0 = OPT['dv'].copy()
+    dv_i = OPT['dv'].copy()
+
+    theta_0 = nonlcon(dv_0) 
+    grad_theta_0 = nonlcongrad(dv_0)
+    # Finite differences
+    print('Computing finite difference sensitivities...') 
+
+    # Do this for all design variables or only a few
+    # up_to_dv = n_dv 
+    up_to_dv = n_dv 
+
+    for i in range(0,up_to_dv):
+        #perturb dv
+        dv_i[i] = dv_0[i] + fd_step 
+        theta_i = nonlcon(dv_i) 
+
+        grad_theta_i[i] = (theta_i - theta_0)/fd_step 
+
+        error = grad_theta_0[i] - grad_theta_i[i] 
+
+        if np.abs(error) > np.abs(max_error):
+            max_error = error 
+            max_error_dv = i 
+        
+        rel_error = error / theta_0 
+        if np.abs(rel_error) > np.abs(max_rel_error):
+            max_rel_error = rel_error 
+            max_rel_error_dv = i    
+
+        dv_i = dv_0.copy()
+
+    theta_0 = nonlcon(dv_0)  # to reset the design
+    grad_theta_0 = nonlcongrad(dv_0)  # to reset the design
+
+    print('Max. ABSOLUTE error is:') 
+    print( max_error )
+    print('It occurs at:') 
+    print('\tvariable:' + str(max_error_dv) )
+
+    print('Max. RELATIVE error is:')
+    print( max_rel_error )
+    print('It occurs at:') 
+    print('\tvariable:' + str(max_rel_error_dv) )
+
+    plt.figure(3)
+    plt.plot(grad_theta_i,'+')
+    plt.plot(grad_theta_0,'.')
+    # plt.legend('fd','analytical')
+    plt.title('constraint function')
+    plt.xlabel('design variable z') 
+    plt.ylabel('dv/dz') 
+    plt.show()
+
+
+def run_finite_difference_check():
+    # This function performs a finite difference check of the analytical
+    # sensitivities of the cost and/or constraint functions by invoking the
+    # corresponding routines.
+    global OPT
+
+    if OPT['check_cost_sens']:
+        fd_check_cost()
+    if OPT['check_cons_sens']:
+        fd_check_constraint()
+
+
+def plot_densities():
+    global FE, OPT, GEOM
+
+    img = 1 - OPT['elem_dens'].reshape(
+        (FE['mesh_input']['elements_per_side'][1],
+        FE['mesh_input']['elements_per_side'][0]) , order='F')
+
+    img = np.flip(img,0)
+    plt.imshow(img)
+    plt.gray()
+    plt.show()
 
 
 def compute_compliance(FE,OPT,GEOM):
@@ -99,13 +267,13 @@ def compute_volume_fraction(FE,OPT,GEOM):
 
     # compute the design sensitivity
     Dvolfrac_Ddv = (v_e @ OPT['Delem_dens_Ddv'] )/V   # Eq. (31)
-    grad_vofrac = Dvolfrac_Ddv
+    grad_volfrac = Dvolfrac_Ddv
     
     # output
     OPT['volume_fraction'] = volfrac
-    OPT['grad_volume_fraction'] = grad_vofrac
+    OPT['grad_volume_fraction'] = grad_volfrac
 
-    return volfrac , grad_vofrac
+    return volfrac , grad_volfrac
 
 
 def evaluate_relevant_functions(FE,OPT,GEOM):
@@ -124,8 +292,8 @@ def evaluate_relevant_functions(FE,OPT,GEOM):
 def nonlcon(dv):
     global  FE, OPT, GEOM
     
-    OPT['dv_old'] = OPT['dv']
-    OPT['dv'] = dv
+    OPT['dv_old'] = OPT['dv'].copy()
+    OPT['dv'] = dv.copy()
     
     # Update or perform the analysis
     if ( OPT['dv'] != OPT['dv_old'] ).any():
@@ -141,19 +309,31 @@ def nonlcon(dv):
     return g.flatten()
 
 
+def nonlcongrad(dv):
+    global  FE, OPT, GEOM
+
+    n_con   = OPT['functions']['n_func']-1 # number of constraints
+    gradg = np.zeros((OPT['n_dv'],n_con))
+
+    for i in range(0,n_con):
+        gradg[:,i] = OPT['functions']['f'][i+1]['grad']
+    
+    return gradg.flatten()
+        
+
 def obj(dv):
     global  FE, OPT, GEOM
     
-    OPT['dv_old'] = OPT['dv'] # save the previous design
-    OPT['dv'] = dv # update the design
+    OPT['dv_old'] = OPT['dv'].copy() # save the previous design
+    OPT['dv'] = dv.copy() # update the design
     
     # If different, update or perform the analysis
     if ( OPT['dv'] != OPT['dv_old'] ).any():
         update_geom_from_dv(FE,OPT,GEOM)
         perform_analysis(FE,OPT,GEOM)
 
-    f = OPT['functions']['f'][0]['value'].flatten()
-    g = OPT['functions']['f'][0]['grad'].flatten()
+    f = OPT['functions']['f'][0]['value'].flatten().copy()
+    g = OPT['functions']['f'][0]['grad'].flatten().copy()
 
     return f, g
 
@@ -202,7 +382,7 @@ def init_optimization(FE,OPT,GEOM):
         # compute sampling radius
         # The radius corresponds to the circle (or sphere) that circumscribes a
         # square (or cube) that has the edge length of elem_size.
-        OPT['parameters']['elem_r'] = np.sqrt(FE['dim'])/2 * FE['elem_vol']*(1/FE['dim']) 
+        OPT['parameters']['elem_r'] = np.sqrt(FE['dim'])/2 * FE['elem_vol']**(1/FE['dim']) 
     
     ##
     # Initilize the design variable and its indexing schemes
@@ -303,6 +483,8 @@ def runopt(FE,OPT,GEOM,x0,obj,nonlcon):
             print( "Iteration: " + str(state.nit) + \
                 "\n\tCompliance: " + str(OPT['functions']['f'][0]['value']) +\
                 "\n\tVolume fra: " + str(OPT['functions']['f'][1]['value']) )
+
+            # plot_densities()
             # if state.status == 'init':
             #     # do nothing
             #     pass
@@ -328,15 +510,18 @@ def runopt(FE,OPT,GEOM,x0,obj,nonlcon):
         history['fconsval'] = np.array(())
 
         bounds = Bounds(lb.flatten(),ub.flatten())
+
         nonlinear_constraint = NonlinearConstraint(nonlcon,
             -np.inf, OPT['functions']['constraint_limit'],
-            jac='2-point')
+            jac=nonlcongrad)
 
         # This is the call to the optimizer
         res = minimize(obj,x0.flatten(),method='trust-constr',jac=True,
             constraints=nonlinear_constraint,
             options={'verbose': 1},bounds=bounds,
-            callback=output) 
+            tol=OPT['options']['kkt_tol'],callback=output) 
+        
+        plot_densities()
 
     elif 'mma' == OPT['options']['optimizer']:
         ncons = OPT['functions']['n_func'] - 1  # Number of optimization constraints
@@ -1025,7 +1210,7 @@ def compute_bar_elem_distance(FE,OPT,GEOM):
     x_1b = points.T.flatten()[OPT['bar_dv'][0:dim,:]] # (i,b) 
     x_2b = points.T.flatten()[OPT['bar_dv'][dim:2*dim,:]] # (i,b) 
     x_e = FE['centroids']                        # (i,1,e)
-    
+
     a_b  = x_2b - x_1b
     l_b  = np.sqrt( np.sum( a_b**2 , 0 ) )  # length of the bars, Eq. (10)
     l_b[ np.where(l_b < tol) ] = 1          # To avoid division by zero
@@ -1033,12 +1218,12 @@ def compute_bar_elem_distance(FE,OPT,GEOM):
 
     x_e_1b = (x_e.T[:,None] - x_1b.T).swapaxes(0,2)               # (i,b,e) 
     x_e_2b = (x_e.T[:,None] - x_2b.T).swapaxes(0,2)                 # (i,b,e) 
-    norm_x_e_1b = np.sqrt( np.sum( np.power( x_e_1b , 2 ) , 0 ) )   # (1,b,e)
-    norm_x_e_2b = np.sqrt( np.sum( np.power( x_e_2b , 2 ) , 0 ) )   # (1,b,e) 
+    norm_x_e_1b = np.sqrt( np.sum( x_e_1b**2 , 0 ) )  # (1,b,e)
+    norm_x_e_2b = np.sqrt( np.sum( x_e_2b**2 , 0 ) )   # (1,b,e) 
 
     l_be     = np.sum( x_e_1b * a_b[:,:,None] , 0 )                 # (1,b,e), Eq. (12)
     vec_r_be = x_e_1b - ( l_be.T * a_b[:,None] ).swapaxes(1,2)      # (i,b,e)
-    r_be     = np.sqrt( np.sum( np.power( vec_r_be , 2 ) , 0 ) )    # (1,b,e), Eq. (13)
+    r_be     = np.sqrt( np.sum( vec_r_be**2 , 0 ) )    # (1,b,e), Eq. (13)
 
     l_be_over_l_b = (l_be.T / l_b).T
 
@@ -1057,21 +1242,23 @@ def compute_bar_elem_distance(FE,OPT,GEOM):
 
     d_inv = dist**(-1)           # This can rer a division by zero 
     d_inv[ np.isinf( d_inv ) ] = 0 # lies on medial axis, and so we now fix it
-    
+
     ## The sensitivities below are obtained from Eq. (30)
     ## sensitivity to x_1b    
     Dd_be_Dx_1b = -x_e_1b * d_inv * branch1 + \
         -vec_r_be * d_inv * ( 1 - l_be_over_l_b ) * branch3
     
     Dd_be_Dx_2b = -x_e_2b * d_inv * branch2 + \
-        -vec_r_be * d_inv * ( 1 - l_be_over_l_b ) * branch3
-    
-    ## assemble the sensitivities to the bar design parameters (scaled)
-    Ddist_Dbar_s = np.concatenate((Dd_be_Dx_1b,Dd_be_Dx_2b),
-        axis=0).transpose((1,2,0)) * \
-        OPT['scaling']['point_scale'].repeat( 2 , axis=0 )
+        -vec_r_be * d_inv * l_be_over_l_b * branch3
 
-    return dist , Ddist_Dbar_s
+    ## assemble the sensitivities to the bar design parameters (scaled)
+    Dd_be_Dbar_ends = np.concatenate((Dd_be_Dx_1b,Dd_be_Dx_2b),
+        axis=0).transpose((1,2,0)) * \
+        np.concatenate( ( OPT['scaling']['point_scale'] , OPT['scaling']['point_scale'] ) )
+    # print( Dd_be_Dx_1b[:,1000:1005].transpose((2,0,1)) )
+    # time.sleep(10)
+
+    return dist , Dd_be_Dbar_ends
 
 
 def penalize(*args):
@@ -1132,7 +1319,7 @@ def project_element_densities(FE,OPT,GEOM):
     #
 
     ##  Distances from the element centroids to the medial segment of each bar
-    d_be , Dd_be_Dbar_s = compute_bar_elem_distance(FE,OPT,GEOM)
+    d_be , Dd_be_Dbar_ends = compute_bar_elem_distance(FE,OPT,GEOM)
 
     ## Bar-element projected densities
     r_b =  GEOM['current_design']['bar_matrix'][:,-1] # bar radii
@@ -1140,7 +1327,7 @@ def project_element_densities(FE,OPT,GEOM):
 
     # X_be is \phi_b/r in Eq. (2).  Note that the numerator corresponds to
     # the signed distance of Eq. (8).
-    X_be = ( ( r_b - d_be.T ).T / r_e )
+    X_be = ( r_b[:,None] - d_be ) / r_e[None,:]
 
     ## Projected density 
     # Initial definitions
@@ -1155,21 +1342,21 @@ def project_element_densities(FE,OPT,GEOM):
     if FE['dim'] == 2:  # 2D  
         rho_be[inB] = 1 + ( X_be[inB]*np.sqrt( 1.0 - X_be[inB]**2 ) - np.arccos(X_be[inB]) ) / np.pi
         Drho_be_Dx_be[inB] = ( np.sqrt( 1.0 - X_be[inB]**2 )*2.0 ) / np.pi # Eq. (28)
-
+        # rho_be = np.arctan(3*X_be)/np.pi + 0.5
+        # Drho_be_Dx_be = 3/(np.pi*(1+9*X_be**2))
     elif FE['dim'] == 3:
         rho_be[inB] = ( (X_be[inB]-2.0)*(-1.0/4.0)*(X_be[inB]+1.0)**2 )
         Drho_be_Dx_be[inB] = ( X_be[inB]**2*(-3.0/4.0)+3.0/4.0 ) # Eq. (28)
 
     # Sensitivities of raw projected densities, Eqs. (27) and (29)
-    Drho_be_Dbar_s = ( Drho_be_Dx_be * -1/r_e * 
-        Dd_be_Dbar_s.transpose((2,0,1)) ).transpose((1,2,0))
+    Drho_be_Dbar_ends = ( Drho_be_Dx_be * -1/r_e * 
+        Dd_be_Dbar_ends.transpose((2,0,1)) ).transpose((1,2,0))
     
     Drho_be_Dbar_radii  = OPT['scaling']['radius_scale'] * Drho_be_Dx_be * np.transpose(1/r_e)
 
-
     ## Combined densities
     # Get size variables    
-    alpha_b = GEOM['current_design']['bar_matrix'][:,-1] # bar size
+    alpha_b = GEOM['current_design']['bar_matrix'][:,-2].copy() # bar size
 
     # Without penalization:
     # ====================
@@ -1179,8 +1366,8 @@ def project_element_densities(FE,OPT,GEOM):
 
     # Sensitivities of unpenalized effective densities, Eq. (26) with
     # ?\partial \mu / \partial (\alpha_b \rho_{be})=1
-    DX_be_Dbar_s = Drho_be_Dbar_s * alpha_b[:,None,None]
-    DX_be_Dbar_size = rho_be  
+    DX_be_Dbar_s = Drho_be_Dbar_ends * alpha_b[:,None,None]
+    DX_be_Dbar_size = rho_be.copy()  
     DX_be_Dbar_radii = Drho_be_Dbar_radii * alpha_b[:,None]
 
     # Combined density of Eq. (5).
@@ -1306,7 +1493,7 @@ def update_dv_from_geom(FE,OPT,GEOM):
     OPT['dv'][ OPT['point_dv'],0 ] = ( ( GEOM['initial_design']['point_matrix'][:,1:] -
         OPT['scaling']['point_min'] ) / OPT['scaling']['point_scale'] ).flatten()
     
-    OPT['dv'][ OPT['size_dv'],0 ] = GEOM['initial_design']['bar_matrix'][:,-2]
+    OPT['dv'][ OPT['size_dv'],0 ] = GEOM['initial_design']['bar_matrix'][:,-2].copy()
 
     OPT['dv'][ OPT['radius_dv'],0 ] = ( GEOM['initial_design']['bar_matrix'][:,-1] \
         - OPT['scaling']['radius_min'] ) / OPT['scaling']['radius_scale'] 
@@ -1325,11 +1512,11 @@ def update_geom_from_dv(FE,OPT,GEOM):
             OPT['dv'][ OPT['point_dv'] ].reshape( (FE['dim'],GEOM['n_point']) ,order='F') + \
             OPT['scaling']['point_min'][:,None] ).T
 
-    GEOM['current_design']['bar_matrix'][:,-2] = OPT['dv'][OPT['size_dv']].copy()
+    GEOM['current_design']['bar_matrix'][:,-2] = OPT['dv'][OPT['size_dv']].copy().flatten()
 
-    GEOM['current_design']['bar_matrix'][:,-1] = OPT['dv'][OPT['radius_dv']] * \
+    GEOM['current_design']['bar_matrix'][:,-1] = ( OPT['dv'][OPT['radius_dv']] * \
         OPT['scaling']['radius_scale'] + \
-        OPT['scaling']['radius_min']
+        OPT['scaling']['radius_min'] ).flatten()
 
 
 def FE_analysis(FE,OPT,GEOM):
@@ -1355,9 +1542,9 @@ def FE_assemble_BC(FE,OPT,GEOM):
 
     # determine prescribed xi displacement components:
     for idisp in range( 0 , FE['BC']['n_pre_disp_dofs'] ):
-        idx = FE['dim'] * ( FE['BC']['disp_node'][idisp]-1) + FE['BC']['disp_dof'][idisp]
+        idx = FE['dim'] * FE['BC']['disp_node'][idisp] + FE['BC']['disp_dof'][idisp]
         FE['U'][idx] = FE['BC']['disp_value'][idisp]
-
+    
     ## Assemble prescribed loads
     # initialize a sparse global force vector
     
@@ -1365,10 +1552,10 @@ def FE_assemble_BC(FE,OPT,GEOM):
 
     # determine prescribed xi load components:
     for iload in range( 0 , FE['BC']['n_pre_force_dofs'] ):
-        idx = FE['dim'] * ( FE['BC']['force_node'][iload]-1) + \
+        idx = FE['dim'] * FE['BC']['force_node'][iload] + \
             FE['BC']['force_dof'][iload]
         FE['P'][idx] = FE['BC']['force_value'][iload]
-    
+
 
 def FE_assemble_stiffness_matrix(FE,OPT,GEOM):
     # FE_ASSEMBLE assembles the global stiffness matrix, partitions it by 
@@ -1650,12 +1837,12 @@ def FE_init_partitioning(FE,OPT,GEOM):
     FE['fixeddofs'] = 0 != np.zeros((FE['n_global_dof'],1))
 
     if 2 == FE['dim']:
-        FE['fixeddofs'][ 2*FE['BC']['disp_node'][ FE['BC']['disp_dof'] == 1 ] - 1 ] = True # set prescribed x1 DOFs 
-        FE['fixeddofs'][ 2*FE['BC']['disp_node'][ FE['BC']['disp_dof'] == 2 ] ] = True   # set prescribed x2 DOFs 
+        FE['fixeddofs'][ 2*FE['BC']['disp_node'][ FE['BC']['disp_dof'] == 0 ] ] = True # set prescribed x1 DOFs 
+        FE['fixeddofs'][ 2*FE['BC']['disp_node'][ FE['BC']['disp_dof'] == 1 ] + 1 ] = True   # set prescribed x2 DOFs 
     elif 3 == FE['dim']:
-        FE['fixeddofs'][ 3*FE['BC']['disp_node'][ FE['BC']['disp_dof'] == 1 ] - 2 ] = True # set prescribed x1 DOFs 
-        FE['fixeddofs'][ 3*FE['BC']['disp_node'][ FE['BC']['disp_dof'] == 2 ] - 1 ] = True # set prescribed x2 DOFs 
-        FE['fixeddofs'][ 3*FE['BC']['disp_node'][ FE['BC']['disp_dof'] == 3 ] ] = True   # set prescribed x3 DOFs 
+        FE['fixeddofs'][ 3*FE['BC']['disp_node'][ FE['BC']['disp_dof'] == 0 ] ] = True # set prescribed x1 DOFs 
+        FE['fixeddofs'][ 3*FE['BC']['disp_node'][ FE['BC']['disp_dof'] == 1 ] + 1 ] = True # set prescribed x2 DOFs 
+        FE['fixeddofs'][ 3*FE['BC']['disp_node'][ FE['BC']['disp_dof'] == 2 ] + 2 ] = True   # set prescribed x3 DOFs 
         
     FE['freedofs'] = np.logical_not( FE['fixeddofs'] )
 
@@ -1687,7 +1874,7 @@ def FE_init_partitioning(FE,OPT,GEOM):
         FE['edofMat'][elem,:] = edofs
 
     FE['iK'] = np.kron( FE['edofMat'] , np.ones((n_elem_dof,1),dtype=int) ).T\
-        .reshape( FE['n_elem']*n_ewlem_dof**2 , order ='F' )
+        .reshape( FE['n_elem']*n_elem_dof**2 , order ='F' )
     FE['jK'] = np.kron( FE['edofMat'] , np.ones((1,n_elem_dof),dtype=int) ).T\
         .reshape( FE['n_elem']*n_elem_dof**2 , order ='F' )
 
@@ -1713,36 +1900,15 @@ def FE_solve(FE,OPT,GEOM):
         FE['U'][f] = linalg.spsolve( FE['Kff'] , FE['rhs'] )[:,None]
 
     elif 'iterative' == FE['analysis']['solver']['type']:
-        tol = FE['analysis']['solver'].tol
-        maxit = FE['analysis']['solver'].maxit
-        # check if the user has specified use of the gpu
-        
-        if FE['analysis']['solver'].use_gpu == False:
-            ## cpu solver
-            
-            ME.identifier = []
-            try:
-                L = ichol( FE['Kff'])
-            except:
-                print("A problem was encountered")
-            
-            if ME.identifier == 'MATLAB:ichol:Breakdown':
-                msg = ['ichol encountered nonpositive pivot, using no preconditioner.']
-
-                # you might consider tring different preconditioners (e.g. LU) in 
-                # the case ichol breaks down. We will default to no preconditioner:
-                FE['U'][F] = pcg( FE['Kff'], FE['rhs'], \
-                    tol,maxit, \
-                    [] \
-                    )   
-            else:
-                msg = []
-                # L.T preconditioner
-                FE['U'][F] = pcg( FE['Kff'], FE['rhs'], \
-                        tol, maxit, \
-                        L,L.T )  
-            
-            print(msg)
+        tol = FE['analysis']['solver']['tol']
+        maxit = FE['analysis']['solver']['maxit']
+    
+        msg = []
+        # L.T preconditioner
+        solution, __ = linalg.cg(FE['Kff'],FE['rhs'],
+            x0=FE['U'][f],tol=tol,maxiter=maxit)
+        FE['U'][f] = solution[:,None] 
+        # print(msg)
 
     # solve the reaction forces:
     FE['P'][p] = FE['Kpp'] @ FE['U'][p] + FE['Kfp'].T @ FE['U'][f]
@@ -1793,17 +1959,16 @@ init_FE(FE,OPT,GEOM)
 init_geometry(FE,OPT,GEOM)
 init_optimization(FE,OPT,GEOM)
 
-# # load('matlab.mat','GEOM') update_dv_from_geom
 
 # ## Analysis
 perform_analysis(FE,OPT,GEOM) 
-
+# plot_densities()
 ## Finite difference check of sensitivities
 # (If requested)
-if OPT['make_fd_check']:
-    run_finite_difference_check()
+# if OPT['make_fd_check']:
+#     run_finite_difference_check()
 
-# ## Optimization
+## Optimization
 OPT['history'] = runopt(FE,OPT,GEOM,OPT['dv'], obj , nonlcon )
 
 # ## Plot History
@@ -1811,5 +1976,5 @@ OPT['history'] = runopt(FE,OPT,GEOM,OPT['dv'], obj , nonlcon )
 #     plot_history(3)
 
 # ## Report time
-# toc = time.perf_counter()
-# print( "Time in seconds: str(toc-tic)" )
+toc = time.perf_counter()
+print( "Time in seconds: " + str(toc-tic) )

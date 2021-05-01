@@ -113,7 +113,7 @@ GEOM['max_bar_radius'] = 0.501
 ## =======================================================================    
 ## Finite element solver
 FE['analysis'] = {'solver':{}}
-FE['analysis']['solver']['type'] = 'direct' # 'direct'  # Options: 'direct' or 'iterative'
+FE['analysis']['solver']['type'] = 'iterative' # 'direct'  # Options: 'direct' or 'iterative'
 FE['analysis']['solver']['tol'] = 1e-5          # only for iterative
 FE['analysis']['solver']['maxit'] = 1e4         # only for iterative
 FE['analysis']['solver']['use_gpu'] = False 
@@ -194,11 +194,11 @@ OPT['options']['kkt_tol'] = 1e-4
 # you want to do one or the other but not both).
 #
 # Whether or not to perform sensitivities finite difference check
-OPT['make_fd_check'] = False
+OPT['make_fd_check'] = True
 # Step size for finite difference
-OPT['fd_step_size'] = 1e-6
+OPT['fd_step_size'] = 1e-5
 # Whether or not to check cost function sensitivities
-OPT['check_cost_sens'] = False
+OPT['check_cost_sens'] = True
 # Whether or not to check constraint sensitivities
 OPT['check_cons_sens'] = True
     
