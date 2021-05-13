@@ -113,7 +113,7 @@ GEOM['max_bar_radius'] = 0.501
 ## =======================================================================    
 ## Finite element solver
 FE['analysis'] = {'solver':{}}
-FE['analysis']['solver']['type'] = 'iterative' # 'direct'  # Options: 'direct' or 'iterative'
+FE['analysis']['solver']['type'] = 'direct' # 'direct'  # Options: 'direct' or 'iterative'
 FE['analysis']['solver']['tol'] = 1e-5          # only for iterative
 FE['analysis']['solver']['maxit'] = 1e4         # only for iterative
 FE['analysis']['solver']['use_gpu'] = False 
@@ -165,6 +165,7 @@ OPT['parameters']['penalization_param'] = 3
 OPT['options'] = {}
 # Optimizer (options: 'fmincon-active-set' and 'mma')
 OPT['options']['optimizer'] = 'fmincon-active-set'
+# OPT['options']['optimizer'] = 'mma'
 # Whether plots should be produced or not 
 OPT['options']['plot'] = plot_cond 
 # Write to a vkt file options are 'none', 'last' (only write last 
@@ -177,7 +178,7 @@ OPT['options']['dv_scaling'] = True
 # Move limits as a fraction of the range between bounds 
 OPT['options']['move_limit'] = 0.1 
 # Maximum number of iterations 
-OPT['options']['max_iter'] = 300 
+OPT['options']['max_iter'] = 25 
 # Minimum step size in design
 OPT['options']['step_tol'] = 1e-3 
 # Convergence tolerance on KKT norm
@@ -194,9 +195,9 @@ OPT['options']['kkt_tol'] = 1e-4
 # you want to do one or the other but not both).
 #
 # Whether or not to perform sensitivities finite difference check
-OPT['make_fd_check'] = True
+OPT['make_fd_check'] = False
 # Step size for finite difference
-OPT['fd_step_size'] = 1e-5
+OPT['fd_step_size'] = 1e-7
 # Whether or not to check cost function sensitivities
 OPT['check_cost_sens'] = True
 # Whether or not to check constraint sensitivities

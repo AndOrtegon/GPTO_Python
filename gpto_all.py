@@ -46,13 +46,15 @@
 
 ## source folders containing scripts not in this folder
 import time
+
 import numpy as np
-import matplotlib.pyplot as plt
-from scipy.optimize import minimize
-from scipy.optimize import Bounds
-from scipy.optimize import NonlinearConstraint
-from scipy.sparse import linalg
 import scipy.sparse as sp 
+import matplotlib.pyplot as plt
+
+from scipy.optimize import minimize, Bounds, NonlinearConstraint
+from scipy.sparse import linalg
+from MMA import mmasub, kktcheck
+
 
 OPT  = {}
 GEOM = {}
@@ -221,8 +223,23 @@ def plot_densities():
         FE['mesh_input']['elements_per_side'][0]) , order='F')
 
     img = np.flip(img,0)
+
+    plt.ion()
+    plt.figure(1)
     plt.imshow(img)
     plt.gray()
+    plt.pause(0.0001)
+    plt.draw()
+
+
+def plot_history(fig):
+    global FE, OPT, GEOM
+
+    plt.figure(fig)
+    plt.subplot(2,1,1)
+    plt.plot( OPT['history']['fval'].T )
+    plt.subplot(2,1,2)
+    plt.plot( OPT['functions']['constraint_limit'] + OPT['history']['fconsval'].T )
     plt.show()
 
 
@@ -305,7 +322,8 @@ def nonlcon(dv):
 
     for i in range(0,n_con):
         g[i] = OPT['functions']['f'][i+1]['value']
-        
+        g = g - OPT['functions']['constraint_limit']
+
     return g.flatten()
 
 
@@ -333,7 +351,7 @@ def obj(dv):
         perform_analysis(FE,OPT,GEOM)
 
     f = OPT['functions']['f'][0]['value'].flatten().copy()
-    g = OPT['functions']['f'][0]['grad'].flatten().copy()
+    g = OPT['functions']['f'][0]['grad'].copy()
 
     return f, g
 
@@ -443,9 +461,10 @@ def init_optimization(FE,OPT,GEOM):
 
 def runopt(FE,OPT,GEOM,x0,obj,nonlcon):
     # Perform the optimization using Scilab minimize with
-    # constrained trust region
+    # constrained trust region or mma
     history = {}
 
+    # Design variables constraint
     if OPT['options']['dv_scaling']:   # Eq. (33)
         lb_point = np.zeros( (FE['dim'],1) )
         ub_point = np.ones( (FE['dim'],1) )
@@ -483,61 +502,53 @@ def runopt(FE,OPT,GEOM,x0,obj,nonlcon):
             print( "Iteration: " + str(state.nit) + \
                 "\n\tCompliance: " + str(OPT['functions']['f'][0]['value']) +\
                 "\n\tVolume fra: " + str(OPT['functions']['f'][1]['value']) )
-
-            # plot_densities()
-            # if state.status == 'init':
-            #     # do nothing
-            #     pass
-            # elif state == 'iter':
-            #     ## Concatenate current point and obj value with history
-            #     # history['fval'] = np.stack( ( history['fval'] , optimValues.fval ) , axis = 1 )
-            #     # history['fconsval'] = np.stack( ( history['fconsval'] , nonlcon(OPT['dv']) ) , axis = 1 )
-            #     # history['x'] = np.stack( ( history['x'] , x[:] ) , axis = 1 ) # here we make x into a column vector
-                
-            #     # # Write to vtk file if requested.  
-            #     # if OPT['options']['write_to_vtk'] == 'all':
-            #     #     writevtk(OPT['options']['vtk_output_path'], 'dens', optimValues.iteration)
-                
-            # elif state == 'done':
-            #     # do nothing
-            #     pass
             
+            if state.nit == 1:
+                history['fval']     = state['fun'][:,None]
+                history['fconsval'] = state['constr'][0][:,None]
+                history['x']        = x[:,None]
+            else:
+                # Concatenate current point and obj value with history
+                history['fval']     = np.concatenate( ( history['fval'] , state['fun'][:,None] ) , axis = 1 )
+                history['fconsval'] = np.concatenate( ( history['fconsval'] , state['constr'][0][:,None] ) , axis = 1 )
+                history['x']        = np.concatenate( ( history['x'] , x[:,None] ) , axis = 1 ) # here we make x into a column vector
+            
+            plot_densities()
+
             return stop    
 
-        # Initialize history object
-        history['x'] = np.array(())
-        history['fval'] = np.array(())
-        history['fconsval'] = np.array(())
+        # Plot
+        plot_densities()
 
+        # Initialize history object
         bounds = Bounds(lb.flatten(),ub.flatten())
 
         nonlinear_constraint = NonlinearConstraint(nonlcon,
-            -np.inf, OPT['functions']['constraint_limit'],
+            -np.inf, 0,
             jac=nonlcongrad)
 
         # This is the call to the optimizer
         res = minimize(obj,x0.flatten(),method='trust-constr',jac=True,
-            constraints=nonlinear_constraint,
-            options={'verbose': 1},bounds=bounds,
+            constraints=nonlinear_constraint,bounds=bounds,
+            options={'verbose': 1,'maxiter':OPT['options']['max_iter']},
             tol=OPT['options']['kkt_tol'],callback=output) 
         
-        plot_densities()
 
     elif 'mma' == OPT['options']['optimizer']:
         ncons = OPT['functions']['n_func'] - 1  # Number of optimization constraints
         ndv = OPT['n_dv'] # Number of design variables
 
         # Initialize vectors that store current and previous two design iterates
-        x = x0
-        xold1 = x0 
-        xold2 = x0
+        x       = x0.copy()
+        xold1   = x0.copy() 
+        xold2   = x0.copy()
 
         # Initialize move limits 
         ml_step = OPT['options']['move_limit'] * abs(ub - lb)  # Compute move limits once
 
         # Initialize lower and upper asymptotes
-        low = lb
-        upp = ub
+        low = lb.copy()
+        upp = ub.copy()
 
         # These are the MMA constants (Svanberg, 1998 DACAMM Course)
         c   = 1000*np.ones( (ncons,1) )
@@ -546,94 +557,86 @@ def runopt(FE,OPT,GEOM,x0,obj,nonlcon):
         a   = np.zeros( (ncons, 1) )
 
         # Evaluate the initial design and print values to screen 
-        iter = 0
+        iter = 1
         f0val , df0dx = obj(x)
-        fval, dummy, dfdx, dummy2 = nonlcon(x)
-        dfdx = dfdx.T
+        fval = nonlcon(x)
+        dfdx = nonlcongrad(x).T
 
-        fprintf('It. #i, Obj= #-12.5e, ConsViol = #-12.5e\n', \
-            iter, f0val, max(max(fval, zeros(ncons,1))))
+        df0dx = df0dx[:,None]
+        dfdx = dfdx[:,None].T
 
-        ###
-        # Save initial design to history
-        history['fval'] = np.stack( ( history['fval'] , f0val ) , axis=1 )
-        history['fconsval'] = np.stack( ( history['fconsval'] , fval ) , axis=1 )
-        history['x'] = np.stack( ( history['x'] , x[:] ) , axis = 1 )
+        print('It. ' + str(iter) + ', Obj= ' + str(f0val) +
+            ', ConsViol = ' + str(max(max(fval, np.zeros((ncons,1))))) ) 
 
-        ###
-        # Plot initial design 
-        plotfun(iter)
+        # Save history
+        history['fval']     = f0val[:,None]
+        history['fconsval'] = fval[:,None]
+        history['x']        = x[:,None]
                 
         #### Initialize stopping values
         kktnorm         = 10*OPT['options']['kkt_tol']
         dv_step_change  = 10*OPT['options']['step_tol']
 
+        # Plot 
+        plot_densities()
 
         ## MMA Loop
-        while kktnorm > OPT['options']['kkt_tol'] and iter < OPT['options']['max_iter'] and \
-                dv_step_change > OPT['options']['step_tol']:
+        while kktnorm > OPT['options']['kkt_tol'] and \
+            iter < OPT['options']['max_iter'] and \
+            dv_step_change > OPT['options']['step_tol']:
 
             iter = iter+1
 
-            # Impose move limits by modifying lower and upper bounds passed to MMA
-            # Eq. (33)
-            mlb = np.max(lb, x - ml_step)
-            mub = np.min(ub, x + ml_step)
-
+            # Impose move limits by modifying lower and upper bounds passed to MMA, Eq. (33)
+            mlb = np.maximum(lb, x - ml_step)
+            mub = np.minimum(ub, x + ml_step)            
 
             #### Solve MMA subproblem for current design x
             xmma,ymma,zmma,lam,xsi,eta,mu,zet,s,low,upp = \
-            mmasub(ncons,ndv,iter,x,mlb,mub,xold1, \
-                xold2, f0val,df0dx,fval,dfdx,low,upp,a0,a,c,d)
+                mmasub(ncons,ndv,iter,x,mlb,mub,xold1,
+                xold2, f0val,df0dx,fval,dfdx,low,upp,a0,a,c,d,
+                0.5)
 
             #### Updated design vectors of previous and current iterations
-            xold2 = xold1
-            xold1 = x
-            x  = xmma
+            xold2, xold1, x = xold1, x, xmma
             
             # Update function values and gradients
-            f0val , df0dx  = obj(x)
-            fval, dummy, dfdx, dummy2 = nonlcon(x)
-            dfdx = dfdx.T
+            f0val , df0dx = obj(x)
+            fval = nonlcon(x)
+            dfdx = nonlcongrad(x)
             
+            df0dx = df0dx[:,None]
+            dfdx = dfdx[:,None].T
+
             # Compute change in design variables
             # Check only after first iteration
             if iter > 1:
-                dv_step_change = norm(x - xold1)
+                dv_step_change = np.linalg.norm(x - xold1)
                 if dv_step_change < OPT['options']['step_tol']:
-                    fprintf('Design step convergence tolerance satisfied.\n')
+                    print('Design step convergence tolerance satisfied.\n')
                 
             
             if iter == OPT['options']['max_iter']:
-                fprintf('Reached maximum number of iterations.\n')
+                print('Reached maximum number of iterations.\n')
                 
             
             # Compute norm of KKT residual vector
-            [residu,kktnorm,residumax] = \
-            kktcheck(ncons,ndv,xmma,ymma,zmma,lam,xsi,eta,mu,zet,s, \
+            residu, kktnorm, residumax = \
+                kktcheck(ncons,ndv,xmma,ymma,zmma,lam,xsi,eta,mu,zet,s, \
                 lb,ub,df0dx,fval,dfdx,a0,a,c,d)
             
             # Produce output to screen
-            fprintf('It. #i, Obj= #-12.5e, ConsViol = #-12.5e, KKT-norm = #-12.5e, DV norm change = #-12.5e\n', \
-                iter, f0val, max(max(fval, zeros(ncons,1))), kktnorm, dv_step_change)
-            
-            # # Save design to .mat file
-            # folder, baseFileName, dummy = fileparts(GEOM['initial_design']['path'])
-            # mat_filename = fullfile(folder, strcat(baseFileName, '.mat'))
-            # save(mat_filename, 'GEOM')
-            
-            # # Write to vtk file if requested.  
-            # if OPT['options']['write_to_vtk'] == 'all':
-            #     writevtk(OPT['options']['vtk_output_path'], 'dens', iter)
+            print('It. ' + str(iter) + ', Obj= ' + str(f0val) +
+                ', ConsViol = ' + str(max(max(fval, np.zeros((ncons,1))))) )
+            print( '\tKKT-norm = ' + str(kktnorm) + 'DV norm change ' + str(dv_step_change) )
                 
-            
-            # Update history
-            history['fval'] = np.stack( ( history['fval'] ,f0val) , axis=1 )
-            history['fconsval'] = np.stack( ( history['fconsval'] , fval ) , axis=1 )
-            history['x'] = np.stack( ( history['x'] , x[:] ) , axis=1 )
+            # Concatenate current point and obj value with history
+            history['fval']     = np.concatenate( ( history['fval'] , f0val[:,None] ) , axis = 1 )
+            history['fconsval'] = np.concatenate( ( history['fconsval'] , fval[:,None] ) , axis = 1 )
+            history['x']        = np.concatenate( ( history['x'] , x[:,None] ) , axis = 1 ) # here we make x into a
             
             # Plot current design
-            plotfun(iter)
+            plot_densities()
 
     if True:
         var = True
@@ -1322,7 +1325,7 @@ def project_element_densities(FE,OPT,GEOM):
     d_be , Dd_be_Dbar_ends = compute_bar_elem_distance(FE,OPT,GEOM)
 
     ## Bar-element projected densities
-    r_b =  GEOM['current_design']['bar_matrix'][:,-1] # bar radii
+    r_b =  GEOM['current_design']['bar_matrix'][:,-1].copy() # bar radii
     r_e =  OPT['parameters']['elem_r'] # sample window radius
 
     # X_be is \phi_b/r in Eq. (2).  Note that the numerator corresponds to
@@ -1469,7 +1472,7 @@ def smooth_max(x,p,form_def,x_min):
 
     elif form_def == 'KS_under':
         # note: convergence might be fixed with Euler-Gamma
-        N = size(x,1)
+        N = x.shape[0]
         S = x_min + (1-x_min)*np.log( np.sum( np.exp(x) ,axis=0) /N) / p 
         dSdx = (1-x_min)*np.exp( p*x ) / np.sum(np.exp(x),axis=0)
     else:
@@ -1959,22 +1962,27 @@ init_FE(FE,OPT,GEOM)
 init_geometry(FE,OPT,GEOM)
 init_optimization(FE,OPT,GEOM)
 
-
 # ## Analysis
 perform_analysis(FE,OPT,GEOM) 
 # plot_densities()
 ## Finite difference check of sensitivities
 # (If requested)
-# if OPT['make_fd_check']:
-#     run_finite_difference_check()
+if OPT['make_fd_check']:
+    run_finite_difference_check()
 
 ## Optimization
+# OPT['history'] = runopt(FE,OPT,GEOM,OPT['dv'], obj , nonlcon )
 OPT['history'] = runopt(FE,OPT,GEOM,OPT['dv'], obj , nonlcon )
-
-# ## Plot History
-# if True == OPT.options.plot:
-#     plot_history(3)
 
 # ## Report time
 toc = time.perf_counter()
 print( "Time in seconds: " + str(toc-tic) )
+
+# hold graph
+plt.ioff()
+
+# ## Plot History
+if True == OPT['options']['plot']:
+    plot_history(3)
+
+
