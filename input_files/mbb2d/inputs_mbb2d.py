@@ -52,27 +52,28 @@ plot_cond = True
 #                  earlier versions work if so, try at your own risk).
 #
 FE['mesh_input'] = {}
-FE['mesh_input']['type'] = 'read-gmsh'
+FE['mesh_input']['type'] = 'generate'
 
 # If mesh input type is 'generate', you must specify the dimensions of
 # the rectangle/cuboid and the number of elements along each direction:
-FE['mesh_input']['box_dimensions'] = np.array( (20,10) )
-FE['mesh_input']['elements_per_side'] = np.array( (128,64) )
+FE['mesh_input']['box_dimensions'] = np.array( (20,5) )
+FE['mesh_input']['elements_per_side'] = np.array( (200,50) )
 
 # If mesh input type is 'read-home-made', you must provide a
 # mesh file name including extension (*.mat).
 # 
 # NOTE: all folders are relative to the root folder where the GPTO_b.m
 # script is located.
-#
-FE['mesh_input']['mesh_filename'] = 'input_files/cantilever2d/2drectangle.mat'
+
+# FE['mesh_input']['mesh_filename'] = ''
 
 # If mesh input type is 'read-gmsh', you must provide a
 # mesh file name including extension (*.m). To produce this file, you must
 # first generate a transfinite mesh (only quad elements in 2-d, only hexa
 # elements in 3-d) in Gmsh, and then export it with Matlab format
 # (including the .m extension).
-FE['mesh_input']['gmsh_filename'] = 'input_files/cantilever2d/cantilever2d.py'
+
+# FE['mesh_input']['gmsh_filename'] = ''
 
     
 ## =======================================================================
@@ -80,7 +81,7 @@ FE['mesh_input']['gmsh_filename'] = 'input_files/cantilever2d/cantilever2d.py'
 
 # Here, you must specify the path to a Matlab script file that sets up the
 # boundary conditions (which you must modify according to the problem)
-FE['mesh_input']['bcs_file'] = 'input_files/cantilever2d/setup_bcs_cantilever2d.py'
+FE['mesh_input']['bcs_file'] = 'input_files/mbb2d/setup_bcs_mbb2d.py'
 
 
 ## =======================================================================
@@ -101,15 +102,15 @@ FE['material']['nu_void'] = 0.3  # Poisson ratio of the void material
 # that initializes the geometry otherwise, it should be the path to a
 # .mat file previously saved by the code
 GEOM['initial_design'] = { 
-    'path':'input_files/cantilever2d/initial_cantilever2d_geometry.py' ,
+    'path':'input_files/mbb2d/initial_mbb2d_geometry.py' ,
     'plot':plot_cond ,
     'restart':False}
 
 # You must specify the lower and upper bounds on the bar radius.  If you 
 # want a design with fixed bar radii, simply set both fields to the same
 # value.
-GEOM['min_bar_radius'] = 0.5
-GEOM['max_bar_radius'] = 0.501
+GEOM['min_bar_radius'] = 0.25
+GEOM['max_bar_radius'] = 0.251
 ## =======================================================================    
 ## Finite element solver
 FE['analysis'] = {'solver':{}}
@@ -135,7 +136,7 @@ OPT['functions']['objective'] = 'compliance'
 OPT['functions']['constraints'] = 'volume fraction'
 # Inequality constraint (upper) limits vector: should have the
 # constraint limit for each one of the constraints.
-OPT['functions']['constraint_limit'] = [0.3]
+OPT['functions']['constraint_limit'] = [0.45]
 
 ## =======================================================================        
 ## Geometry projection parameters
@@ -176,11 +177,11 @@ OPT['options']['vtk_output_path'] = 'output_files'
 # whether to scale the design variables to the range [0,1]
 OPT['options']['dv_scaling'] = True 
 # Move limits as a fraction of the range between bounds 
-OPT['options']['move_limit'] = 0.05 
+OPT['options']['move_limit'] = 0.1 
 # Maximum number of iterations 
-OPT['options']['max_iter'] = 50
+OPT['options']['max_iter'] = 300
 # Minimum step size in design
-OPT['options']['step_tol'] = 2e-3 
+OPT['options']['step_tol'] = 1e-2
 # Convergence tolerance on KKT norm
 OPT['options']['kkt_tol'] = 1e-4 
 
@@ -197,7 +198,7 @@ OPT['options']['kkt_tol'] = 1e-4
 # Whether or not to perform sensitivities finite difference check
 OPT['make_fd_check'] = False
 # Step size for finite difference
-OPT['fd_step_size'] = 1e-7
+OPT['fd_step_size'] = 1e-5
 # Whether or not to check cost function sensitivities
 OPT['check_cost_sens'] = True
 # Whether or not to check constraint sensitivities

@@ -49,6 +49,7 @@ import time
 
 import numpy as np
 import scipy.sparse as sp 
+import matplotlib.collections
 import matplotlib.pyplot as plt
 
 from scipy.optimize import minimize, Bounds, NonlinearConstraint
@@ -59,6 +60,11 @@ from MMA import mmasub, kktcheck
 OPT  = {}
 GEOM = {}
 FE   = {}
+
+FE['FEA_t'] = 0 
+FE['FEA_n'] = 0
+GEOM['proj_t'] = 0
+OPT['Fun_t'] = 0
 
 def fd_check_cost():
     # This function performs a finite difference check of the sensitivities of
@@ -216,6 +222,18 @@ def run_finite_difference_check():
 
 
 def plot_densities():
+    fig = 1
+    if FE['mesh_input']['type'] =='read-gmsh':
+        # mesh was made by gmsh
+        plot_density_cells(fig)
+    else:
+        # mesh was generated and comforms to meshgrid format. 
+        # we then default to plotting level-sets of the density as
+        # linearly interpolated between the centroids of the mesh.
+        plot_density_levelsets(fig)
+
+
+def plot_density_levelsets(fig):
     global FE, OPT, GEOM
 
     img = 1 - OPT['elem_dens'].reshape(
@@ -225,9 +243,80 @@ def plot_densities():
     img = np.flip(img,0)
 
     plt.ion()
-    plt.figure(1)
+    plt.figure(fig)
     plt.imshow(img)
     plt.gray()
+    plt.pause(0.0001)
+    plt.draw()
+
+
+def plot_density_cells(fig):
+    # Plot the density field into the specified figure
+    global FE, OPT
+
+    ## Change here whether you want to plot the penalized (i.e., effective) or 
+    ## the unpenalized (i.e., projected) densities.  By default, we plot the 
+    ## effective densities.
+    #
+    # For penalized, use OPT.penalized_elem_dens;
+    # For unpenalized, use OPT.elem_dens;
+    #
+    # plot_dens = OPT['penalized_elem_dens'];
+    plot_dens = OPT['elem_dens']
+
+    ## 2D
+    if FE['dim'] == 2:
+        F = FE['elem_node'].T # matrix of faces to be sent to patch function
+        V = FE['coords'].T # vertex list to be sent to patch function
+
+    ## 3D
+    if FE['dim'] == 3:
+        element_face_nodes = np.array( (
+            (1,2,3,4) ,
+            (1,2,6,5) ,
+            (2,3,7,6) , 
+            (3,4,8,7) , 
+            (4,1,5,8) , 
+            (5,6,7,8) ) ).T
+        F = FE['elem_node'][element_face_nodes,:].reshape((-1,4))
+        V = FE['coords'].T # vertex lest to be sent to patch function
+    
+    plt.ion()
+    plt.figure(fig)
+    ax = plt.gca()
+    
+    # ax.remove()
+    verts = V[F]
+    pc  = matplotlib.collections.PolyCollection(verts,  cmap='gray' )
+    pc.set_array(1-plot_dens)
+    ax.add_collection(pc)
+
+    ax.autoscale()
+
+    # for n levels of opacity color
+    # n = 64
+    # level = np.linspace(0,1,n+1)
+    # ax  = plt.gca()
+
+    # for i in range(n,1,-1): #1:n
+    #     low     = level[i-1]
+    #     high    = level[i]
+    #     alpha   = low
+
+    #     if FE['dim'] == 3:
+    #         C = np.amin( plot_dens , axis=0 ).repeat(6,axis=0)
+    #     else:
+    #         C = np.amin( plot_dens , axis=0 )
+        
+    #     f = np.logical_and( low < C , C <= high )
+
+    #     verts = V[F[f,:]]
+    #     pc  = matplotlib.collections.PolyCollection(verts,  cmap='gray' )
+    
+    #     pc.set_array(alpha)
+    #     ax.add_collection(pc)
+    
+
     plt.pause(0.0001)
     plt.draw()
 
@@ -236,10 +325,33 @@ def plot_history(fig):
     global FE, OPT, GEOM
 
     plt.figure(fig)
+
     plt.subplot(2,1,1)
-    plt.plot( OPT['history']['fval'].T )
-    plt.subplot(2,1,2)
-    plt.plot( OPT['functions']['constraint_limit'] + OPT['history']['fconsval'].T )
+    a = plt.semilogy( OPT['history']['fval'].T )
+    plt.title( 'Objective history' )
+    plt.xlabel( 'Iteration' )
+    plt.legend( OPT['functions']['f'][0]['name'] )
+
+    if 'fconsval' in OPT['history']:
+        print(OPT['history']['fconsval'].shape)
+        g = OPT['history']['fconsval'].\
+            reshape( ( -1 , OPT['functions']['n_func']-1 ) ) + \
+            OPT['functions']['constraint_limit']
+        
+        label = {}
+        scale = np.ones((1,OPT['functions']['n_func']-1))
+        
+        for i in range( 1 , OPT['functions']['n_func'] ):
+            label[i-1] = OPT['functions']['f'][i]['name']
+            if 'angle constraint' ==  OPT['functions']['f'][i]['name']:
+                scale[i-1] = OPT['options']['angle_constraint']['scale']
+        
+        plt.subplot(2,1,2)
+        plt.plot( g/scale )
+        plt.title( 'Constraint history' )
+        plt.xlabel( 'Iteration' )
+        plt.legend( label )
+    
     plt.show()
 
 
@@ -360,9 +472,20 @@ def perform_analysis(FE,OPT,GEOM):
     # Perform the geometry projection, solve the finite
     # element problem for the displacements and reaction forces, and then
     # evaluate the relevant functions.
+    tic_proj = time.perf_counter()
     project_element_densities(FE,OPT,GEOM)
+    toc_proj = time.perf_counter()
+    GEOM['proj_t'] += toc_proj - tic_proj
+
+    tic_FEA = time.perf_counter()
     FE_analysis(FE,OPT,GEOM)
+    toc_FEA = time.perf_counter()
+    FE['FEA_t'] += toc_FEA - tic_FEA
+
+    tic_Fun = time.perf_counter()
     evaluate_relevant_functions(FE,OPT,GEOM)
+    toc_Fun = time.perf_counter()
+    OPT['Fun_t'] += toc_Fun - tic_Fun
 
 
 def init_optimization(FE,OPT,GEOM):
@@ -1325,7 +1448,7 @@ def project_element_densities(FE,OPT,GEOM):
     d_be , Dd_be_Dbar_ends = compute_bar_elem_distance(FE,OPT,GEOM)
 
     ## Bar-element projected densities
-    r_b =  GEOM['current_design']['bar_matrix'][:,-1].copy() # bar radii
+    r_b =  GEOM['current_design']['bar_matrix'][:,-1] # bar radii
     r_e =  OPT['parameters']['elem_r'] # sample window radius
 
     # X_be is \phi_b/r in Eq. (2).  Note that the numerator corresponds to
@@ -1359,7 +1482,7 @@ def project_element_densities(FE,OPT,GEOM):
 
     ## Combined densities
     # Get size variables    
-    alpha_b = GEOM['current_design']['bar_matrix'][:,-2].copy() # bar size
+    alpha_b = GEOM['current_design']['bar_matrix'][:,-2] # bar size
 
     # Without penalization:
     # ====================
@@ -1390,9 +1513,9 @@ def project_element_densities(FE,OPT,GEOM):
     for b in range(0,GEOM['n_bar']):
         Drho_e_Ddv[:,OPT['bar_dv'][:,b]] = \
             Drho_e_Ddv[:,OPT['bar_dv'][:,b]] + np.concatenate( ( \
-            Drho_e_Dbar_s[b,:,:].reshape( ( FE['n_elem'], 2*FE['dim'] )  , order='F' ).copy() ,  \
-            Drho_e_Dbar_size[b,:].reshape( ( FE['n_elem'], 1 ) ).copy() ,  \
-            Drho_e_Dbar_radii[b,:].reshape( ( FE['n_elem'], 1 ) ).copy() ) , axis=1 )
+            Drho_e_Dbar_s[b,:,:].reshape( ( FE['n_elem'], 2*FE['dim'] )  , order='F' ) ,  \
+            Drho_e_Dbar_size[b,:].reshape( ( FE['n_elem'], 1 ) ) ,  \
+            Drho_e_Dbar_radii[b,:].reshape( ( FE['n_elem'], 1 ) ) ) , axis=1 )
 
     # With penalization:   
     # =================
@@ -1425,9 +1548,9 @@ def project_element_densities(FE,OPT,GEOM):
     for b in range(0,GEOM['n_bar']):
         Dpenal_rho_e_Ddv[:,OPT['bar_dv'][:,b]] = \
             Dpenal_rho_e_Ddv[:,OPT['bar_dv'][:,b]] + np.concatenate( \
-                ( Dpenal_rho_e_Dbar_s[b,:,:].reshape( ( FE['n_elem'], 2*FE['dim'] ) , order='F' ).copy() ,  \
-                Dpenal_rho_e_Dbar_size[b,:].reshape( ( FE['n_elem'], 1 ) ).copy() ,  \
-                Dpenal_rho_e_Dbar_radii[b,:].reshape( ( FE['n_elem'], 1 ) ).copy() ) , \
+                ( Dpenal_rho_e_Dbar_s[b,:,:].reshape( ( FE['n_elem'], 2*FE['dim'] ) , order='F' ) ,  \
+                Dpenal_rho_e_Dbar_size[b,:].reshape( ( FE['n_elem'], 1 ) ) ,  \
+                Dpenal_rho_e_Dbar_radii[b,:].reshape( ( FE['n_elem'], 1 ) ) ) , \
                 axis = 1 )
 
     ## Write the element densities and their sensitivities to OPT 
@@ -1435,7 +1558,7 @@ def project_element_densities(FE,OPT,GEOM):
     OPT['Delem_dens_Ddv'] = Drho_e_Ddv
     OPT['penalized_elem_dens'] = penal_rho_e
     OPT['Dpenalized_elem_dens_Ddv'] = Dpenal_rho_e_Ddv
-    
+
 
 def smooth_max(x,p,form_def,x_min):
     #
@@ -1467,6 +1590,7 @@ def smooth_max(x,p,form_def,x_min):
         dSdx = (1-x_min**p)*(1/N)*(x/S)**(p-1)         
 
     elif form_def == 'KS':
+        epx = np.exp(x)
         S = x_min + (1-x_min)*np.log( np.sum(epx(x),axis=0) )/p
         dSdx = (1-x_min)*np.epx( p*x )/np.sum(epx(x),axis=0)
 
@@ -1528,6 +1652,7 @@ def FE_analysis(FE,OPT,GEOM):
     FE_assemble_stiffness_matrix(FE,OPT,GEOM)
     # Solve the displacements and reaction forces
     FE_solve(FE,OPT,GEOM)
+    FE['FEA_n'] += 1
 
 
 def FE_assemble_BC(FE,OPT,GEOM):
@@ -1820,7 +1945,7 @@ def FE_compute_element_stiffness(FE,OPT,GEOM,C):
 
 
 def FE_init_element_stiffness(FE,OPT,GEOM):
-    # This function computes FE.sK_void, the vector of element 
+    # This function computes FE['sK_void, the vector of element 
     # stiffess matrix entries for the void material.
     # global FE
 
@@ -1950,8 +2075,84 @@ def init_FE(FE,OPT,GEOM):
     FE_init_element_stiffness(FE,OPT,GEOM)
 
 
+def read_gmsh(FE,OPT,GEOM):
+    # This function reads a mesh in Matlab format generated using Gmsh and
+    # stores the node coordinates and element connectivity in the global FE
+    # structure. 
+    #
+    # The name of the Matlab .m file (which must include extension) should be
+    # previously stored in FE['mesh_input.gmsh_filename.
+    #
+    # This function has been tested with Gmsh v. 4.0.7.  Gmsh is distributed
+    # under the terms of the GNU General Public License (GPL), and can be
+    # downloaded from
+    #
+    # gmsh.info
+    #
 
-exec(open('input_files/cantilever2d/inputs_cantilever2d.py').read())
+    # *** Do not modify this code unless necessary **
+    ldict = locals()
+    exec( open( FE['mesh_input']['gmsh_filename'] ).read() ,globals() , ldict )
+    msh = ldict['msh']
+
+    # Note we assume the Matlab file generated by Gmsh creates a structure
+    # named msh, and that this structure is available in the workspace for our
+    # code to then grab.
+
+    # If HEXAS elements are not present, then assume the mesh is 2D (in that
+    # case, the field msh.QUADS must exist
+    if 'HEXAS' in msh:
+        FE['dim'] = 3
+        el_array = msh['HEXAS']
+    else:
+        FE['dim'] = 2
+        el_array = msh['QUADS']
+        
+    # at this point, there is no garuntee that the element nodes are in the
+    # correct order for this code. We assume that the ordering of nodes yields
+    # a positive determinant, so we must now ensure that this is the case.
+
+    nodes_per_elem = 2**FE['dim']
+    coords      = msh['POS'][:,0:FE['dim']].T
+    elem_node   = el_array[:,0:nodes_per_elem].T
+    
+    e_coord = coords[:,elem_node].reshape( ( FE['dim'] , elem_node.shape[0] , elem_node.shape[1] ) , order='F' )
+
+    if FE['dim'] == 2:
+        # ensure that elemnt nodes 1,2,3 are in ccw order:
+        homogenous_coord_123 = np.ones( ( 3 , 3 , e_coord.shape[2] ) )
+        homogenous_coord_123[ 0:FE['dim'] , 0:(FE['dim']+1) , : ] = \
+            e_coord[ 0:FE['dim'] , 0:(FE['dim']+1) , : ]
+
+        cw = np.where( np.sum( np.cross( homogenous_coord_123[:,0,:] , 
+            homogenous_coord_123[:,1,:] , axis=0 ) *  
+            homogenous_coord_123[:,2,:] , axis=0 ) < 0 )[0]
+        
+        # swap nodes 2 and 4 of the cw elements
+        elem_node[1,cw], elem_node[3,cw] = elem_node[3,cw], elem_node[1,cw]
+    else:
+        print('Not yet verified that the element nodes are in the canonical order')
+
+    # Populate appropriate fields in FE structure
+    FE['n_node']    = msh['nbNod']
+    FE['n_elem']    = el_array.shape[0]
+    FE['coords']    = coords
+    FE['elem_node'] = elem_node
+
+    # FE['mesh_input']['elements_per_side'] = \
+    #     np.array( ( np.unique(msh['POS'][:,0]).shape[0] - 1 ,
+    #         np.unique(msh['POS'][:,1]).shape[0] - 1 ) )
+    
+    # FE['mesh_input']['box_dimensions'] = \
+    #     msh['max'] - msh['min']
+
+    # print( FE['mesh_input']['elements_per_side'] )
+    # print( FE['mesh_input']['box_dimensions'] )
+
+
+# exec(open('input_files/cantilever2d/inputs_cantilever2d.py').read())
+# exec(open('input_files/Lbracket2d/inputs_Lbracket2d.py').read())
+exec(open('input_files/mbb2d/inputs_mbb2d.py').read())
 
 ## Start timer
 tic = time.perf_counter()
@@ -1977,6 +2178,10 @@ OPT['history'] = runopt(FE,OPT,GEOM,OPT['dv'], obj , nonlcon )
 # ## Report time
 toc = time.perf_counter()
 print( "Time in seconds: " + str(toc-tic) )
+print( "Time FE analysis: " + str(FE['FEA_t']) ) 
+print( "FE analysis times: " + str(FE['FEA_n']) ) 
+print( "Time projection: " + str(GEOM['proj_t']) ) 
+print( "Time f. eval: " + str(OPT['Fun_t']) ) 
 
 # hold graph
 plt.ioff()
