@@ -165,8 +165,8 @@ OPT['parameters']['penalization_param'] = 3
 ## Optimization parameters
 OPT['options'] = {}
 # Optimizer (options: 'fmincon-active-set' and 'mma')
-# OPT['options']['optimizer'] = 'fmincon-active-set'
-OPT['options']['optimizer'] = 'mma'
+OPT['options']['optimizer'] = 'fmincon-active-set'
+# OPT['options']['optimizer'] = 'mma'
 # Whether plots should be produced or not 
 OPT['options']['plot'] = plot_cond 
 # Write to a vkt file options are 'none', 'last' (only write last 

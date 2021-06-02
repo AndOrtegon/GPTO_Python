@@ -236,18 +236,19 @@ def plot_densities():
 def plot_density_levelsets(fig):
     global FE, OPT, GEOM
 
-    img = 1 - OPT['elem_dens'].reshape(
-        (FE['mesh_input']['elements_per_side'][1],
-        FE['mesh_input']['elements_per_side'][0]) , order='F')
+    if 2 == FE['dim']:
+        img = 1 - OPT['elem_dens'].reshape( (
+            FE['mesh_input']['elements_per_side'][1],
+            FE['mesh_input']['elements_per_side'][0]) , order='F')
 
-    img = np.flip(img,0)
+        img = np.flip(img,0)
 
-    plt.ion()
-    plt.figure(fig)
-    plt.imshow(img)
-    plt.gray()
-    plt.pause(0.0001)
-    plt.draw()
+        plt.ion()
+        plt.figure(fig)
+        plt.imshow(img)
+        plt.gray()
+        plt.pause(0.0001)
+        plt.draw()
 
 
 def plot_density_cells(fig):
@@ -319,6 +320,163 @@ def plot_density_cells(fig):
 
     plt.pause(0.0001)
     plt.draw()
+
+
+def plot_design(*args):
+    # Plot_design(fig,point_mat,bar_mat) plots the bars into the figure fig
+    # fig is the number (or handle) of the figure to use
+    global GEOM, FE
+
+    nargs = len(args)
+    if nargs == 0:
+        fig = 1
+        point_mat = GEOM['current_design']['point_matrix']
+        bar_mat = GEOM['current_design']['bar_matrix']
+    elif nargs == 1:
+        fig = args[0]
+        point_mat = GEOM['current_design']['point_matrix']
+        bar_mat = GEOM['current_design']['bar_matrix']   
+    elif nargs == 3:
+        fig = args[0]
+        point_mat = args[1]
+        bar_mat = args[2] 
+    else:
+        print('plot_design received an invalid number of arguments.')
+
+    ## user specified parameters
+
+    # set the color of the bars
+    bar_color = (1,0,0)    # red 
+    # set size variable threshold to plot bars
+    size_tol = 0.05
+    # set the resolution of the bar-mesh (>=8 and even)
+    N = 16
+
+    ## bar points,vectors and length
+    bar_tol = 1e-12; # threshold below which bar is just a circle
+    n_bar = bar_mat.shape[0]
+
+    x_1b = np.zeros( (3,n_bar) )
+    x_2b = np.zeros( (3,n_bar) ) # these are always in 3D 
+
+    pt1_IDs = bar_mat[:,1]
+    pt2_IDs = bar_mat[:,2]
+
+    x_1b[0:FE['dim'],:] = point_mat[GEOM['point_mat_row'][pt1_IDs],1:].T 
+    x_2b[0:FE['dim'],:] = point_mat[GEOM['point_mat_row'][pt2_IDs],1:].T
+        
+    n_b = x_2b - x_1b
+    l_b = np.sqrt(np.sum(n_b*n_b,1)) # length of the bars
+    
+    ## principle bar direction
+    e_hat_1b = n_b/l_b
+    short = l_b < bar_tol
+    e_hat_1b[:,short] = np.array([[1,0,0]]).repeat((1,sum(short)))
+
+    # determine coordinate direction most orthogonal to bar
+    case_1 = abs(n_b[0,:]) < abs(n_b[1,:]) &\
+        abs(n_b[0,:]) < abs(n_b[2,:])
+    case_2 = abs(n_b[1,:]) < abs(n_b[0,:]) &\
+        abs(n_b[1,:]) < abs(n_b[2,:])
+    case_3 = np.logical_not(case_1 | case_2)
+    
+    ## secondary bar direction
+    e_alpha = np.zeros(n_b.shape)
+    e_alpha[0,case_1] = 1
+    e_alpha[1,case_2] = 1
+    e_alpha[2,case_3] = 1
+
+    e_2b        = l_b * np.cross(e_alpha,e_hat_1b)
+    norm_e_2b   = np.sqrt( np.sum(e_2b**2) )
+    e_hat_2b    = e_2b/norm_e_2b
+    
+    ## tertiary bar direction
+    e_3b        = np.cross(e_hat_1b,e_hat_2b)
+    norm_e_3b   = np.sqrt( sum(e_3b**2) )
+    e_hat_3b    = e_3b/norm_e_3b
+
+    ## Jacobian transformation (rotation) matrix R
+    R_b = np.zeros( (3,3,n_bar) )
+    R_b[:,0,:] = e_hat_1b
+    R_b[:,1,:] = e_hat_2b
+    R_b[:,2,:] = e_hat_3b
+        
+    ## create the reference-sphere mesh
+    if FE['dim'] == 3:
+        [x,y,z] = sphere(N)
+        sx1 = z[0:N/2,:]
+        sy1 = x[0:N/2,:]
+        sz1 = y[0:N/2,:]
+        sx2 = z[N/2+1:,:]
+        sy2 = x[N/2+1:,:]
+        sz2 = y[N/2+1:,:]
+        X1 = [sx1, sy1, sz1].T
+        X2 = [sx2, sy2, sz2].T
+    else:
+        N = N**2
+        t = np.linspace( -np.pi/2 , -np.pi/2+2*np.pi , N+1 )[None,:]
+        x = -np.cos(t)
+        y =  np.sin(t)
+        z = np.zeros(t.shape)
+
+        cxo = x[1:N/2]
+        cyo = y[1:N/2]
+        czo = z[1:N/2]
+
+        cxf = x[N/2+1:]
+        cyf = y[N/2+1:]
+        czf = z[N/2+1:]
+
+        X1 = [cxo, cyo, czo].T
+        X2 = [cxf, cyf, czf].T
+
+
+    ## create the surface for each bar and plot it 
+    plt.figure(fig)
+
+    r_b     = bar_mat[:,-1]
+    alpha   = bar_mat[:,-2]
+
+    for b in range(0,n_bar):
+        bar_X1 = r_b(b) * R_b[:,:,b] * X1 + x_1b[:,b]
+        bar_X2 = r_b(b) * R_b[:,:,b] * X2 + x_2b[:,b]
+
+        if FE['dim'] == 3:
+            bar_x1 = np.reshape(bar_X1[0,:], [N/2, N+1])
+            bar_y1 = np.reshape(bar_X1[1,:], [N/2, N+1])
+            bar_z1 = np.reshape(bar_X1[2,:], [N/2, N+1])
+
+            bar_x2 = np.reshape(bar_X2[0,:], [N/2+1, N+1])
+            bar_y2 = np.reshape(bar_X2[1,:], [N/2+1, N+1])
+            bar_z2 = np.reshape(bar_X2[2,:], [N/2+1, N+1])
+        else:
+            bar_x1 = bar_X1[0,:].T
+            bar_y1 = bar_X1[1,:].T
+            bar_z1 = bar_X1[2,:].T
+
+            bar_x2 = bar_X2[0,:].T
+            bar_y2 = bar_X2[1,:].T
+            bar_z2 = bar_X2[2,:].T
+
+        # bar_x = [bar_x1; bar_x2]
+        # bar_y = [bar_y1; bar_y2]
+        # bar_z = [bar_z1; bar_z2]
+
+        # Color = bar_color
+        # Alpha = alpha(b)**2
+
+        # if Alpha > size_tol:
+        #     C = colormap('gray')
+        #     colormap(C.*Color) # color the gray-scale map
+
+        #     if FE['dim'] == 3:
+        #         s = surfl(bar_x,bar_y,bar_z); # shaded surface with lighting
+        #         s.LineStyle = 'none'
+        #         s.FaceAlpha = Alpha
+        #         shading interp
+        #     else:
+        #         s = patch(bar_x,bar_y,Color)
+        #         s.FaceAlpha = Alpha
 
 
 def plot_history(fig):
@@ -1800,9 +1958,9 @@ def FE_compute_element_info(FE,OPT,GEOM):
         #     ( see J. Grandy, October 30, 1997,
         #       Efficient Computation of Volume of Hexahedral Cells )
         FE['elem_vol'] = ( \
-            np.dot( (n7-n2) + (n8-n1), np.cross( (n7-n4)          , (n3-n1)           ) ) + \
-            np.dot( (n8-n1)          , np.cross( (n7-n4) + (n6-n1), (n7-n5)           ) ) + \
-            np.dot( (n7-n2)          , np.cross( (n6-n1)          , (n7-n5) + (n3-n1) ) ) \
+            np.sum( ( (n7-n2) + (n8-n1) ) * np.cross( (n7-n4)          , (n3-n1)           ) , axis=1 ) + \
+            np.sum( (n8-n1)               * np.cross( (n7-n4) + (n6-n1), (n7-n5)           ) , axis=1  ) + \
+            np.sum( (n7-n2)               * np.cross( (n6-n1)          , (n7-n5) + (n3-n1) ) , axis=1  ) \
         )/12 
    
     elif 2 == dim:
@@ -1904,9 +2062,9 @@ def FE_compute_element_stiffness(FE,OPT,GEOM,C):
         for i in range(0,num_gauss_pt):
             xi = gauss_pt[i]
             for j in range(0,num_gauss_pt):
+                eta = gauss_pt[j]
+
                 if 2 == FE['dim']:
-                    eta = gauss_pt[j]
-                    
                     # Compute Jacobian
                     J       = jacobian(FE,OPT,GEOM,xi,eta,e)
                     det_J   = np.linalg.det(J)
@@ -2032,9 +2190,15 @@ def FE_solve(FE,OPT,GEOM):
         maxit = FE['analysis']['solver']['maxit']
     
         msg = []
-        # L.T preconditioner
+
+        # LU incomplete preconditioner
+        # x0 = linalg.spsolve( sp.diags(FE['Kff'].diagonal(),0) , FE['rhs'])
+
         solution, __ = linalg.cg(FE['Kff'],FE['rhs'],
-            x0=FE['U'][f],tol=tol,maxiter=maxit)
+            x0=FE['U'][f],tol=tol,
+            # x0=x0,tol=tol,
+            maxiter=maxit)
+            
         FE['U'][f] = solution[:,None] 
         # print(msg)
 
@@ -2150,9 +2314,10 @@ def read_gmsh(FE,OPT,GEOM):
     # print( FE['mesh_input']['box_dimensions'] )
 
 
-# exec(open('input_files/cantilever2d/inputs_cantilever2d.py').read())
+exec(open('input_files/cantilever2d/inputs_cantilever2d.py').read())
 # exec(open('input_files/Lbracket2d/inputs_Lbracket2d.py').read())
-exec(open('input_files/mbb2d/inputs_mbb2d.py').read())
+# exec(open('input_files/mbb2d/inputs_mbb2d.py').read())
+# exec(open('input_files/cantilever3d/inputs_cantilever3d.py').read())
 
 ## Start timer
 tic = time.perf_counter()
