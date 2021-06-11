@@ -110,7 +110,7 @@ GEOM['initial_design'] = {
 # want a design with fixed bar radii, simply set both fields to the same
 # value.
 GEOM['min_bar_radius'] = 0.25
-GEOM['max_bar_radius'] = 0.251
+GEOM['max_bar_radius'] = 0.30
 ## =======================================================================    
 ## Finite element solver
 FE['analysis'] = {'solver':{}}
@@ -165,8 +165,8 @@ OPT['parameters']['penalization_param'] = 3
 ## Optimization parameters
 OPT['options'] = {}
 # Optimizer (options: 'fmincon-active-set' and 'mma')
-OPT['options']['optimizer'] = 'fmincon-active-set'
-# OPT['options']['optimizer'] = 'mma'
+# OPT['options']['optimizer'] = 'default'
+OPT['options']['optimizer'] = 'mma'
 # Whether plots should be produced or not 
 OPT['options']['plot'] = plot_cond 
 # Write to a vkt file options are 'none', 'last' (only write last 

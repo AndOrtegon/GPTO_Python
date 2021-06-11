@@ -46,6 +46,8 @@
 
 ## source folders containing scripts not in this folder
 import time
+import os
+from typing import Iterable
 
 import numpy as np
 import scipy.sparse as sp 
@@ -54,6 +56,7 @@ import matplotlib.pyplot as plt
 
 from scipy.optimize import minimize, Bounds, NonlinearConstraint
 from scipy.sparse import linalg
+from scipy.io import savemat
 from MMA import mmasub, kktcheck
 
 
@@ -61,10 +64,10 @@ OPT  = {}
 GEOM = {}
 FE   = {}
 
-FE['FEA_t'] = 0 
-FE['FEA_n'] = 0
+FE['FEA_t']    = 0 
+FE['FEA_n']    = 0
 GEOM['proj_t'] = 0
-OPT['Fun_t'] = 0
+OPT['Fun_t']   = 0
 
 def fd_check_cost():
     # This function performs a finite difference check of the sensitivities of
@@ -221,8 +224,7 @@ def run_finite_difference_check():
         fd_check_constraint()
 
 
-def plot_densities():
-    fig = 1
+def plot_density(fig):
     if FE['mesh_input']['type'] =='read-gmsh':
         # mesh was made by gmsh
         plot_density_cells(fig)
@@ -285,14 +287,19 @@ def plot_density_cells(fig):
     plt.ion()
     plt.figure(fig)
     ax = plt.gca()
-    
-    # ax.remove()
+    ax.cla()
+
     verts = V[F]
     pc  = matplotlib.collections.PolyCollection(verts,  cmap='gray' )
     pc.set_array(1-plot_dens)
     ax.add_collection(pc)
 
-    ax.autoscale()
+    plt.gca().set_aspect('equal', adjustable='box')
+    plt.xlim( (FE['coord_min'][0], FE['coord_max'][0]) )
+    plt.ylim( (FE['coord_min'][1], FE['coord_max'][1]) )
+
+    plt.pause(0.0001)
+    plt.draw()
 
     # for n levels of opacity color
     # n = 64
@@ -316,10 +323,6 @@ def plot_density_cells(fig):
     
     #     pc.set_array(alpha)
     #     ax.add_collection(pc)
-    
-
-    plt.pause(0.0001)
-    plt.draw()
 
 
 def plot_design(*args):
@@ -359,26 +362,25 @@ def plot_design(*args):
     x_1b = np.zeros( (3,n_bar) )
     x_2b = np.zeros( (3,n_bar) ) # these are always in 3D 
 
-    pt1_IDs = bar_mat[:,1]
-    pt2_IDs = bar_mat[:,2]
+    pt1_IDs = bar_mat[:,1].astype(int)
+    pt2_IDs = bar_mat[:,2].astype(int)
 
-    x_1b[0:FE['dim'],:] = point_mat[GEOM['point_mat_row'][pt1_IDs],1:].T 
-    x_2b[0:FE['dim'],:] = point_mat[GEOM['point_mat_row'][pt2_IDs],1:].T
+    x_1b[0:FE['dim'],:] = point_mat[GEOM['point_mat_row'][pt1_IDs].toarray()[:,0],1:].T 
+    x_2b[0:FE['dim'],:] = point_mat[GEOM['point_mat_row'][pt2_IDs].toarray()[:,0],1:].T
         
     n_b = x_2b - x_1b
-    l_b = np.sqrt(np.sum(n_b*n_b,1)) # length of the bars
+    l_b = np.sqrt(np.sum(n_b*n_b,0))[None,:] # length of the bars
     
     ## principle bar direction
     e_hat_1b = n_b/l_b
     short = l_b < bar_tol
-    e_hat_1b[:,short] = np.array([[1,0,0]]).repeat((1,sum(short)))
+    if short.any():
+        e_hat_1b[:,short[0,:]] = np.tile( np.array([[1],[0],[0]]) , (1,sum(short)) )
 
     # determine coordinate direction most orthogonal to bar
-    case_1 = abs(n_b[0,:]) < abs(n_b[1,:]) &\
-        abs(n_b[0,:]) < abs(n_b[2,:])
-    case_2 = abs(n_b[1,:]) < abs(n_b[0,:]) &\
-        abs(n_b[1,:]) < abs(n_b[2,:])
-    case_3 = np.logical_not(case_1 | case_2)
+    case_1 = ( abs(n_b[0,:]) < abs(n_b[1,:]) ) & ( abs(n_b[0,:]) < abs(n_b[2,:]) )
+    case_2 = ( abs(n_b[1,:]) < abs(n_b[0,:]) ) & ( abs(n_b[1,:]) < abs(n_b[2,:]) )
+    case_3 = np.logical_not( case_1 | case_2 )
     
     ## secondary bar direction
     e_alpha = np.zeros(n_b.shape)
@@ -386,12 +388,12 @@ def plot_design(*args):
     e_alpha[1,case_2] = 1
     e_alpha[2,case_3] = 1
 
-    e_2b        = l_b * np.cross(e_alpha,e_hat_1b)
+    e_2b        = l_b * np.cross(e_alpha,e_hat_1b,axis=0)
     norm_e_2b   = np.sqrt( np.sum(e_2b**2) )
     e_hat_2b    = e_2b/norm_e_2b
     
     ## tertiary bar direction
-    e_3b        = np.cross(e_hat_1b,e_hat_2b)
+    e_3b        = np.cross(e_hat_1b,e_hat_2b,axis=0)
     norm_e_3b   = np.sqrt( sum(e_3b**2) )
     e_hat_3b    = e_3b/norm_e_3b
 
@@ -401,54 +403,58 @@ def plot_design(*args):
     R_b[:,1,:] = e_hat_2b
     R_b[:,2,:] = e_hat_3b
         
-    ## create the reference-sphere mesh
+    # create the reference-sphere mesh
     if FE['dim'] == 3:
-        [x,y,z] = sphere(N)
-        sx1 = z[0:N/2,:]
-        sy1 = x[0:N/2,:]
-        sz1 = y[0:N/2,:]
-        sx2 = z[N/2+1:,:]
-        sy2 = x[N/2+1:,:]
-        sz2 = y[N/2+1:,:]
+        theta = np.linspace( -np.pi , 0 , N+1 )[:,None]
+        phi = np.linspace( 0 , 2*np.pi , N+1 )[:,None]
+
+        z = np.cos( theta ) * np.ones((N+1,N+1))
+        y = np.sin( theta ) @ np.sin( phi ).T
+        x = np.sin( theta ) @ np.cos( phi ).T
+
+        sx1 = z[0:N//2,:]
+        sy1 = x[0:N//2,:]
+        sz1 = y[0:N//2,:]
+        sx2 = z[N//2+1:,:]
+        sy2 = x[N//2+1:,:]
+        sz2 = y[N//2+1:,:]
         X1 = [sx1, sy1, sz1].T
         X2 = [sx2, sy2, sz2].T
     else:
         N = N**2
-        t = np.linspace( -np.pi/2 , -np.pi/2+2*np.pi , N+1 )[None,:]
+        t =  np.linspace( -np.pi/2 , -np.pi/2+2*np.pi , N )
         x = -np.cos(t)
         y =  np.sin(t)
-        z = np.zeros(t.shape)
+        z =  np.zeros(t.shape)
 
-        cxo = x[1:N/2]
-        cyo = y[1:N/2]
-        czo = z[1:N/2]
+        cxo = x[0:N//2]
+        cyo = y[0:N//2]
+        czo = z[0:N//2]
 
-        cxf = x[N/2+1:]
-        cyf = y[N/2+1:]
-        czf = z[N/2+1:]
+        cxf = x[N//2:]
+        cyf = y[N//2:]
+        czf = z[N//2:]
 
-        X1 = [cxo, cyo, czo].T
-        X2 = [cxf, cyf, czf].T
+        X1 = np.array([cxo, cyo, czo])
+        X2 = np.array([cxf, cyf, czf])
 
-
-    ## create the surface for each bar and plot it 
-    plt.figure(fig)
-
+    ## create the surface for each bar and plot it
+    vertices = np.zeros((n_bar,256,2)) 
     r_b     = bar_mat[:,-1]
     alpha   = bar_mat[:,-2]
 
     for b in range(0,n_bar):
-        bar_X1 = r_b(b) * R_b[:,:,b] * X1 + x_1b[:,b]
-        bar_X2 = r_b(b) * R_b[:,:,b] * X2 + x_2b[:,b]
+        bar_X1 = r_b[b] * R_b[:,:,b] @ X1 + x_1b[:,b][:,None]
+        bar_X2 = r_b[b] * R_b[:,:,b] @ X2 + x_2b[:,b][:,None]
 
         if FE['dim'] == 3:
-            bar_x1 = np.reshape(bar_X1[0,:], [N/2, N+1])
-            bar_y1 = np.reshape(bar_X1[1,:], [N/2, N+1])
-            bar_z1 = np.reshape(bar_X1[2,:], [N/2, N+1])
+            bar_x1 = np.reshape(bar_X1[0,:], [N/2, N])
+            bar_y1 = np.reshape(bar_X1[1,:], [N/2, N])
+            bar_z1 = np.reshape(bar_X1[2,:], [N/2, N])
 
-            bar_x2 = np.reshape(bar_X2[0,:], [N/2+1, N+1])
-            bar_y2 = np.reshape(bar_X2[1,:], [N/2+1, N+1])
-            bar_z2 = np.reshape(bar_X2[2,:], [N/2+1, N+1])
+            bar_x2 = np.reshape(bar_X2[0,:], [N/2, N])
+            bar_y2 = np.reshape(bar_X2[1,:], [N/2, N])
+            bar_z2 = np.reshape(bar_X2[2,:], [N/2, N])
         else:
             bar_x1 = bar_X1[0,:].T
             bar_y1 = bar_X1[1,:].T
@@ -458,25 +464,44 @@ def plot_design(*args):
             bar_y2 = bar_X2[1,:].T
             bar_z2 = bar_X2[2,:].T
 
-        # bar_x = [bar_x1; bar_x2]
-        # bar_y = [bar_y1; bar_y2]
-        # bar_z = [bar_z1; bar_z2]
+        bar_x = np.concatenate( (bar_x1 , bar_x2) )
+        bar_y = np.concatenate( (bar_y1 , bar_y2) )
+        bar_z = np.concatenate( (bar_z1 , bar_z2) )
 
-        # Color = bar_color
-        # Alpha = alpha(b)**2
+        vertices[b,:,0] = bar_x
+        vertices[b,:,1] = bar_y
+        
 
-        # if Alpha > size_tol:
-        #     C = colormap('gray')
-        #     colormap(C.*Color) # color the gray-scale map
+    plt.ion()
+    plt.figure(fig)    
+    ax = plt.gca()
+    ax.cla()
 
-        #     if FE['dim'] == 3:
-        #         s = surfl(bar_x,bar_y,bar_z); # shaded surface with lighting
-        #         s.LineStyle = 'none'
-        #         s.FaceAlpha = Alpha
-        #         shading interp
-        #     else:
-        #         s = patch(bar_x,bar_y,Color)
-        #         s.FaceAlpha = Alpha
+    Color = bar_color
+    Alpha = alpha[b]**2
+
+    # C = colormap('gray')
+    # colormap(C.*Color) # color the gray-scale map
+
+    if FE['dim'] == 3:
+        s = surfl(bar_x,bar_y,bar_z); # shaded surface with lighting
+        s.LineStyle = 'none'
+        s.FaceAlpha = Alpha
+
+        plt.zlim( (FE['coord_min'][2], FE['coord_max'][2]) )
+        # shading interp
+    else:
+        pc  = matplotlib.collections.PolyCollection(vertices,cmap='gray')
+        pc.set_array(128*np.ones(8))
+        ax.add_collection(pc)
+        # s.FaceAlpha = Alpha
+
+    plt.xlim( (FE['coord_min'][0], FE['coord_max'][0]) )
+    plt.ylim( (FE['coord_min'][1], FE['coord_max'][1]) )
+    plt.gca().set_aspect('equal', adjustable='box')
+
+    plt.pause(0.0001)
+    plt.draw()
 
 
 def plot_history(fig):
@@ -511,6 +536,92 @@ def plot_history(fig):
         plt.legend( label )
     
     plt.show()
+
+
+def writevtk(folder, name_prefix, iteration):
+    # This function writes a vtk file with the mesh and the densities that can
+    # be plotted with, e.g., ParaView
+    #
+    # This function writes an unstructured grid (vtk format) to folder (note
+    # that the folder is relative to the rooth folder where the main script is
+    # located).
+    #
+    # NOTE: if a vtk file with the same name exists in the folder, it will be
+    # overwritten.
+    # global FE, OPT
+
+    # Make sure the output folder exists, and if not, create it
+    if not os.path.isdir( OPT['options']['vtk_output_path'] ):
+        os.mkdir( OPT['options']['vtk_output_path'] )
+
+    num_digits = len( str(OPT['options']['max_iter']) )
+    name_sufix = ('#0' + str(num_digits) + '{it}' ).format( it=iteration )
+    filename = name_prefix + name_sufix + '.vtk'
+    filename = folder + '/' + filename
+    
+    if os.path.isfile( filename ):
+        os.remove(filename)
+
+    fid = open( filename , 'a')
+
+    # Write header
+    fid.write( "# vtk DataFile Version 1.0 \n" )
+    fid.write( "Bar_TO_3D \n" )
+    fid.write(  "ASCII \n" )
+    fid.write(  "DATASET UNSTRUCTURED_GRID \n" )
+
+    # Write nodal coordinates
+    coords = np.zeros((3, FE['n_node']))
+    coords[np.arange(0,FE['dim']),:] = FE['coords'][np.arange(0,FE['dim']),:]   
+
+    fid.write( "POINTS " + str(FE['n_node']) + " float \n" )
+    for inode in range(0,FE['n_node']):
+        if FE['dim'] == 2:
+            fid.write(  '{0:f} {1:f} \n'.format( coords[0, inode] , coords[1, inode] ) )
+        elif FE['dim'] == 3:
+            fid.write(  '{0:f} {1:f} {2:f} \n'.format( coords[0, inode] , 
+                coords[1, inode] , coords[2, inode] ) )
+
+    # Write elements
+    nnodes = 2**FE['dim']  # 4 for quads, 8 for hexas
+
+    fid.write( "CELLS " + str(FE['n_elem'] ) + " " + \
+            str( FE['n_elem']*(nnodes+1) ) + " \n" )
+
+    # IMPORTANT! Vtk numbers nodes from 0, so we subtract 1
+    for iel in range(0,FE['n_elem']):
+        if FE['dim'] == 2:
+            nel = 4
+            fid.write( '{0:d} {1:d} {2:d} {3:d} {4:d} \n'.format( nel , FE['elem_node'][0, iel] ,
+                FE['elem_node'][1, iel] , FE['elem_node'][2, iel] , FE['elem_node'][3, iel] ) )
+        elif FE['dim'] == 3:
+            nel = 8
+            fid.write( '{0:d} {1:d} {2:d} {3:d} {4:d} {5:d} {6:d} {7:d} {8:d} \n'.format( nel , 
+                FE['elem_node'][0, iel] , FE['elem_node'][1, iel] , FE['elem_node'][2, iel] ,
+                FE['elem_node'][3, iel] , FE['elem_node'][4, iel] , FE['elem_node'][5, iel] , 
+                FE['elem_node'][8, iel] , FE['elem_node'][7, iel] ) )
+        
+
+    # Write element types
+    fid.write( "CELL_TYPES " + str(FE['n_elem']) + " \n" )
+
+    if FE['dim'] == 2:
+        elem_type = 9  # Corresponding to VTK_QUAD
+    elif FE['dim'] == 3:
+        elem_type = 12 # Corresponding to VTK_HEXAHEDRON
+    
+    for iel in range(0,FE['n_elem']):
+        fid.write( '{} \n'.format( elem_type ) )
+
+    # Write elemental densities
+    fid.write( "CELL_DATA " + str(FE['n_elem']) + " \n" )
+    fid.write( "SCALARS density float 1 \n" )
+    fid.write( "LOOKUP_TABLE default \n" )
+    for iel in range(0,FE['n_elem']):
+        density = OPT['elem_dens'][iel]
+        fid.write( '{0:f} \n'.format( density ) )
+
+    fid.close()
 
 
 def compute_compliance(FE,OPT,GEOM):
@@ -743,6 +854,23 @@ def init_optimization(FE,OPT,GEOM):
 def runopt(FE,OPT,GEOM,x0,obj,nonlcon):
     # Perform the optimization using Scilab minimize with
     # constrained trust region or mma
+    
+    def plotfun(iter):
+        if OPT['options']['plot'] == True:
+            plt.figure(0)
+            plot_design(0)
+            plt.title( 'design, iteration = {iter}'.format(iter=iter) )
+
+            if FE['dim'] == 3:
+                plt.zlim( (FE['coord_min'][2], FE['coord_max'][2] ) )
+
+
+            plt.figure(1)
+            plot_density(1)
+
+            stop = False
+        return stop   
+
     history = {}
 
     # Design variables constraint
@@ -776,7 +904,7 @@ def runopt(FE,OPT,GEOM,x0,obj,nonlcon):
     ub[OPT['bar_dv']] = np.tile( ub_bar, (1,GEOM['n_bar']) )[:,:,None]
 
     # Optimization routines
-    if  'fmincon-active-set' == OPT['options']['optimizer']:
+    if  'default' == OPT['options']['optimizer']:
         def output(x,state):
             stop = False
             # print( state.status )
@@ -793,13 +921,17 @@ def runopt(FE,OPT,GEOM,x0,obj,nonlcon):
                 history['fval']     = np.concatenate( ( history['fval'] , state['fun'][:,None] ) , axis = 1 )
                 history['fconsval'] = np.concatenate( ( history['fconsval'] , state['constr'][0][:,None] ) , axis = 1 )
                 history['x']        = np.concatenate( ( history['x'] , x[:,None] ) , axis = 1 ) # here we make x into a column vector
-            
-            plot_densities()
+
+            folder, baseFileName = os.path.split(GEOM['initial_design']['path'] )
+            mat_filename = folder + '/' + baseFileName + '.mat'
+            savemat( mat_filename, GEOM )
+
+            if OPT['options']['write_to_vtk'] == 'all':
+                writevtk( OPT['options']['vtk_output_path'] , 'dens' , state.nit )
+
+            plotfun(state.nit)
 
             return stop    
-
-        # Plot
-        plot_densities()
 
         # Initialize history object
         bounds = Bounds(lb.flatten(),ub.flatten())
@@ -814,6 +946,10 @@ def runopt(FE,OPT,GEOM,x0,obj,nonlcon):
             options={'verbose': 1,'maxiter':OPT['options']['max_iter']},
             tol=OPT['options']['kkt_tol'],callback=output) 
         
+        finalIt = res.nit
+        
+        # Plot
+        plotfun(res.nit)
 
     elif 'mma' == OPT['options']['optimizer']:
         ncons = OPT['functions']['n_func'] - 1  # Number of optimization constraints
@@ -859,7 +995,7 @@ def runopt(FE,OPT,GEOM,x0,obj,nonlcon):
         dv_step_change  = 10*OPT['options']['step_tol']
 
         # Plot 
-        plot_densities()
+        plotfun(0)
 
         ## MMA Loop
         while kktnorm > OPT['options']['kkt_tol'] and \
@@ -915,78 +1051,19 @@ def runopt(FE,OPT,GEOM,x0,obj,nonlcon):
             history['fval']     = np.concatenate( ( history['fval'] , f0val[:,None] ) , axis = 1 )
             history['fconsval'] = np.concatenate( ( history['fconsval'] , fval[:,None] ) , axis = 1 )
             history['x']        = np.concatenate( ( history['x'] , x[:,None] ) , axis = 1 ) # here we make x into a
-            
+
+            if OPT['options']['write_to_vtk'] == 'all':
+                writevtk( OPT['options']['vtk_output_path'] , 'dens' , iter )
+
             # Plot current design
-            plot_densities()
+            plotfun(iter)
 
-    if True:
-        var = True
-        # # Write vtk for final iteration if requested
-        # if OPT['options']['write_to_vtk'] == 'all' or \
-        #         strcmp(OPT['options']['write_to_vtk'] == 'last'
-        #     writevtk(OPT['options']['vtk_output_path'], 'dens', optim_output.iterations)
-    
-        # =========================================================================
+        finalIt = iter   
 
-        # def plotfun(x,optimValues,state):
-        #     if state = 'init':
-        #         iter = 0 
-        #     else:
-        #         iter = optimValues.iteration
-
-        #     plotall(iter)
-
-
-        # def plotall(iter):
-        #     if OPT['options']['plot'] == True:
-        #         figure(1)
-        #         plot_design(1)
-        #         title(sprintf('design, iteration = #i',iter))
-        #         axis equal
-        #         xlim([FE['coord_min'][0], FE['coord_max'][0]])
-        #         ylim([FE['coord_min'][1], FE['coord_max'][1]])
-        #         if FE['dim'] == 2:
-        #             view(2)
-        #         else:
-        #             zlim([FE['coord_min'][2], FE['coord_max'][2])
-        #             view([50,22])
-
-        #         if iter == 0:
-        #             pos1 = get(gcf,'Position') # get position of fig 1
-        #             # This assume Matlab places figure centered at center of
-        #             # screen
-        #             fig1_x = pos1(1)       # fig1_y = pos1(2) 
-        #             fig1_width = pos1(3)   # fig1_height = pos1(4)
-        #             # Shift position left by half figure width
-        #             set(gcf,'Position', pos1 - [fig1_width/2,0,0,0]) # Shift position of Figure(1) 
-                
-        #         figure(2)
-        #         plot_density(2)
-        #         axis equal
-        #         xlim([FE['coord_min'][1), FE['coord_max'][1)])
-        #         ylim([FE['coord_min'][2), FE['coord_max'][2)])
-
-        #         if FE['dim'] == 2:
-        #             view(2)
-        #         else:
-        #             zlim([FE['coord_min'][3), FE['coord_max'][3)])
-        #             view([50,22])
-                
-        #         if iter == 0:
-        #             # fig2_x = pos1(1) 
-        #             fig2_y = pos1[1]
-        #             fig2_width = pos1[2]
-        #             fig2_height = pos1[3]
-
-        #             # Shift position of fig 2 so that its left-bottom
-        #             # corner coincides with the right-bottom corner of fig 1
-        #             set(gcf,'Position', [fig1_x + fig1_width/2,fig2_y,fig2_width,fig2_height]) 
-                
-        #         if mma:
-        #             drawback
-
-        #         stop = False
-        #     return stop   
+    if OPT['options']['write_to_vtk'] == 'all' or \
+        OPT['options']['write_to_vtk'] == 'last':
+        writevtk( OPT['options']['vtk_output_path'] , 
+            'dens', finalIt )
 
     return history
 
@@ -1463,16 +1540,6 @@ def init_geometry(FE,OPT,GEOM):
         exec( open(GEOM['initial_design']['path']).read() )
         GEOM['initial_design']['point_matrix'] = GEOM['current_design']['point_matrix']
         GEOM['initial_design']['bar_matrix'] = GEOM['current_design']['bar_matrix']
-    
-    ## No implementado
-    # plot the initial design:
-    # if GEOM['initial_design'].plot:
-    #     plot_design(1, \
-    #         GEOM['initial_design']['point_matrix'], \
-    #         GEOM['initial_design']['bar_matrix'])
-    #     axis equal
-    #     title('initial design')
-    #     drawnow
     
     GEOM['n_point'] = np.size( GEOM['initial_design']['point_matrix'] , 0 )
     GEOM['n_bar']   = np.size( GEOM['initial_design']['bar_matrix'] , 0 )
@@ -2314,6 +2381,7 @@ def read_gmsh(FE,OPT,GEOM):
     # print( FE['mesh_input']['box_dimensions'] )
 
 
+
 exec(open('input_files/cantilever2d/inputs_cantilever2d.py').read())
 # exec(open('input_files/Lbracket2d/inputs_Lbracket2d.py').read())
 # exec(open('input_files/mbb2d/inputs_mbb2d.py').read())
@@ -2323,14 +2391,13 @@ exec(open('input_files/cantilever2d/inputs_cantilever2d.py').read())
 tic = time.perf_counter()
 
 ## Initialization
-
 init_FE(FE,OPT,GEOM)
 init_geometry(FE,OPT,GEOM)
 init_optimization(FE,OPT,GEOM)
 
 # ## Analysis
 perform_analysis(FE,OPT,GEOM) 
-# plot_densities()
+# plot_density()
 ## Finite difference check of sensitivities
 # (If requested)
 if OPT['make_fd_check']:
@@ -2354,5 +2421,3 @@ plt.ioff()
 # ## Plot History
 if True == OPT['options']['plot']:
     plot_history(3)
-
-
