@@ -100,7 +100,7 @@ FE['material']['nu_void'] = 0.3  # Poisson ratio of the void material
 # that initializes the geometry otherwise, it should be the path to a
 # .mat file previously saved by the code
 GEOM['initial_design'] = { 
-    'path':'input_files/Lbracket2d/initial_geometry.py' ,
+    'path':'input_files/Lbracket2d/initial_geometry_Lbracket2d_connected.py' ,
     'plot':plot_cond ,
     'restart':False}
 

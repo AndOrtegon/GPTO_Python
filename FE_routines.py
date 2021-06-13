@@ -1,7 +1,12 @@
 import numpy as np
 from scipy.sparse import linalg
 import scipy.sparse as sp
-from mesh_util import *
+from mesh_utilities import *
+
+FE = {}
+OPT = {}
+GEOM = {}
+
 
 def FE_analysis(FE,OPT,GEOM):
     # Assemble the Global stiffness matrix and solve the FEA
@@ -26,9 +31,9 @@ def FE_assemble_BC(FE,OPT,GEOM):
 
     # determine prescribed xi displacement components:
     for idisp in range( 0 , FE['BC']['n_pre_disp_dofs'] ):
-        idx = FE['dim'] * ( FE['BC']['disp_node'][idisp]-1) + FE['BC']['disp_dof'][idisp]
+        idx = FE['dim'] * FE['BC']['disp_node'][idisp] + FE['BC']['disp_dof'][idisp]
         FE['U'][idx] = FE['BC']['disp_value'][idisp]
-
+    
     ## Assemble prescribed loads
     # initialize a sparse global force vector
     
@@ -36,10 +41,10 @@ def FE_assemble_BC(FE,OPT,GEOM):
 
     # determine prescribed xi load components:
     for iload in range( 0 , FE['BC']['n_pre_force_dofs'] ):
-        idx = FE['dim'] * ( FE['BC']['force_node'][iload]-1) + \
+        idx = FE['dim'] * FE['BC']['force_node'][iload] + \
             FE['BC']['force_dof'][iload]
         FE['P'][idx] = FE['BC']['force_value'][iload]
-    
+
 
 def FE_assemble_stiffness_matrix(FE,OPT,GEOM):
     # FE_ASSEMBLE assembles the global stiffness matrix, partitions it by 
@@ -133,7 +138,7 @@ def FE_compute_element_info(FE,OPT,GEOM):
     for n in range( 0 , FE['n_elem'] ):
         CoordArray[:,:,n]= FE['coords'][:,FE['elem_node'][:,n]].T
     
-    FE['centroids'] = np.reshape( np.mean(CoordArray,axis=0) , ( FE['dim'] , FE['n_elem'] ) )
+    FE['centroids'] = np.mean(CoordArray,axis=0)
 
     # Create arrays with nodal coordinates for all nodes in an element e.g., 
     # n1[:,e) is the array of coordinates of node 1 for element e. Then use these to
@@ -156,9 +161,9 @@ def FE_compute_element_info(FE,OPT,GEOM):
         #     ( see J. Grandy, October 30, 1997,
         #       Efficient Computation of Volume of Hexahedral Cells )
         FE['elem_vol'] = ( \
-            np.dot( (n7-n2) + (n8-n1), np.cross( (n7-n4)          , (n3-n1)           ) ) + \
-            np.dot( (n8-n1)          , np.cross( (n7-n4) + (n6-n1), (n7-n5)           ) ) + \
-            np.dot( (n7-n2)          , np.cross( (n6-n1)          , (n7-n5) + (n3-n1) ) ) \
+            np.sum( ( (n7-n2) + (n8-n1) ) * np.cross( (n7-n4)          , (n3-n1)           ) , axis=1 ) + \
+            np.sum( (n8-n1)               * np.cross( (n7-n4) + (n6-n1), (n7-n5)           ) , axis=1  ) + \
+            np.sum( (n7-n2)               * np.cross( (n6-n1)          , (n7-n5) + (n3-n1) ) , axis=1  ) \
         )/12 
    
     elif 2 == dim:
@@ -260,9 +265,9 @@ def FE_compute_element_stiffness(FE,OPT,GEOM,C):
         for i in range(0,num_gauss_pt):
             xi = gauss_pt[i]
             for j in range(0,num_gauss_pt):
+                eta = gauss_pt[j]
+
                 if 2 == FE['dim']:
-                    eta = gauss_pt[j]
-                    
                     # Compute Jacobian
                     J       = jacobian(FE,OPT,GEOM,xi,eta,e)
                     det_J   = np.linalg.det(J)
@@ -301,15 +306,15 @@ def FE_compute_element_stiffness(FE,OPT,GEOM,C):
 
 
 def FE_init_element_stiffness(FE,OPT,GEOM):
-    # This function computes FE.sK_void, the vector of element 
+    # This function computes FE['sK_void, the vector of element 
     # stiffess matrix entries for the void material.
     # global FE
 
     ## Void Stiffness Matrix Computation
     n_edof = FE['n_edof']
 
-    FE['Ke'] = np.reshape( FE_compute_element_stiffness( FE,OPT,GEOM,FE['material']['C'] ) ,
-            ( n_edof,n_edof , FE['n_elem'] ) )
+    FE['Ke'] = FE_compute_element_stiffness( FE,OPT,GEOM,FE['material']['C'] ).reshape(
+            ( n_edof, n_edof, FE['n_elem'] ) )
 
 
 def FE_init_partitioning(FE,OPT,GEOM):
@@ -321,12 +326,12 @@ def FE_init_partitioning(FE,OPT,GEOM):
     FE['fixeddofs'] = 0 != np.zeros((FE['n_global_dof'],1))
 
     if 2 == FE['dim']:
-        FE['fixeddofs'][ 2*FE['BC']['disp_node'][ FE['BC']['disp_dof'] == 1 ] - 1 ] = True # set prescribed x1 DOFs 
-        FE['fixeddofs'][ 2*FE['BC']['disp_node'][ FE['BC']['disp_dof'] == 2 ] ] = True   # set prescribed x2 DOFs 
+        FE['fixeddofs'][ 2*FE['BC']['disp_node'][ FE['BC']['disp_dof'] == 0 ] ] = True # set prescribed x1 DOFs 
+        FE['fixeddofs'][ 2*FE['BC']['disp_node'][ FE['BC']['disp_dof'] == 1 ] + 1 ] = True   # set prescribed x2 DOFs 
     elif 3 == FE['dim']:
-        FE['fixeddofs'][ 3*FE['BC']['disp_node'][ FE['BC']['disp_dof'] == 1 ] - 2 ] = True # set prescribed x1 DOFs 
-        FE['fixeddofs'][ 3*FE['BC']['disp_node'][ FE['BC']['disp_dof'] == 2 ] - 1 ] = True # set prescribed x2 DOFs 
-        FE['fixeddofs'][ 3*FE['BC']['disp_node'][ FE['BC']['disp_dof'] == 3 ] ] = True   # set prescribed x3 DOFs 
+        FE['fixeddofs'][ 3*FE['BC']['disp_node'][ FE['BC']['disp_dof'] == 0 ] ] = True # set prescribed x1 DOFs 
+        FE['fixeddofs'][ 3*FE['BC']['disp_node'][ FE['BC']['disp_dof'] == 1 ] + 1 ] = True # set prescribed x2 DOFs 
+        FE['fixeddofs'][ 3*FE['BC']['disp_node'][ FE['BC']['disp_dof'] == 2 ] + 2 ] = True   # set prescribed x3 DOFs 
         
     FE['freedofs'] = np.logical_not( FE['fixeddofs'] )
 
@@ -349,18 +354,18 @@ def FE_init_partitioning(FE,OPT,GEOM):
     for elem in range(0,m):
         enodes = FE['elem_node'][:,elem]
         if 2 == FE['dim']:
-            edofs = ( np.stack( ( 2*enodes , 2*enodes+1 ) , axis=1 ) )\
+            edofs = np.stack( ( 2*enodes , 2*enodes+1 ) , axis=1 )\
                 .reshape( ( 1 , n_elem_dof ) )
         elif 3 == FE['dim']:
-            edofs = ( np.stack( ( 3*enodes , 3*enodes+1 , 3*enodes+2 ) , axis=1 ) )\
+            edofs = np.stack( ( 3*enodes , 3*enodes+1 , 3*enodes+2 ) , axis=1 )\
                 .reshape( ( 1 , n_elem_dof ) )
         
         FE['edofMat'][elem,:] = edofs
 
-    FE['iK'] = ( np.kron( FE['edofMat'] , np.ones((n_elem_dof,1),dtype=int) ).T )\
-        .reshape( FE['n_elem']*n_elem_dof**2 , order='F' )
-    FE['jK'] = ( np.kron( FE['edofMat'] , np.ones((1,n_elem_dof),dtype=int) ).T )\
-        .reshape( FE['n_elem']*n_elem_dof**2 , order='F' )
+    FE['iK'] = np.kron( FE['edofMat'] , np.ones((n_elem_dof,1),dtype=int) ).T\
+        .reshape( FE['n_elem']*n_elem_dof**2 , order ='F' )
+    FE['jK'] = np.kron( FE['edofMat'] , np.ones((1,n_elem_dof),dtype=int) ).T\
+        .reshape( FE['n_elem']*n_elem_dof**2 , order ='F' )
 
 
 def FE_solve(FE,OPT,GEOM):
@@ -384,36 +389,21 @@ def FE_solve(FE,OPT,GEOM):
         FE['U'][f] = linalg.spsolve( FE['Kff'] , FE['rhs'] )[:,None]
 
     elif 'iterative' == FE['analysis']['solver']['type']:
-        tol = FE['analysis']['solver'].tol
-        maxit = FE['analysis']['solver'].maxit
-        # check if the user has specified use of the gpu
-        
-        if FE['analysis']['solver'].use_gpu == False:
-            ## cpu solver
-            
-            ME.identifier = []
-            try:
-                L = ichol( FE['Kff'])
-            except:
-                print("A problem was encountered")
-            
-            if ME.identifier == 'MATLAB:ichol:Breakdown':
-                msg = ['ichol encountered nonpositive pivot, using no preconditioner.']
+        tol = FE['analysis']['solver']['tol']
+        maxit = FE['analysis']['solver']['maxit']
+    
+        msg = []
 
-                # you might consider tring different preconditioners (e.g. LU) in 
-                # the case ichol breaks down. We will default to no preconditioner:
-                FE['U'][F] = pcg( FE['Kff'], FE['rhs'], \
-                    tol,maxit, \
-                    [] \
-                    )   
-            else:
-                msg = []
-                # L.T preconditioner
-                FE['U'][F] = pcg( FE['Kff'], FE['rhs'], \
-                        tol, maxit, \
-                        L,L.T )  
+        # LU incomplete preconditioner
+        # x0 = linalg.spsolve( sp.diags(FE['Kff'].diagonal(),0) , FE['rhs'])
+
+        solution, __ = linalg.cg(FE['Kff'],FE['rhs'],
+            x0=FE['U'][f],tol=tol,
+            # x0=x0,tol=tol,
+            maxiter=maxit)
             
-            print(msg)
+        FE['U'][f] = solution[:,None] 
+        # print(msg)
 
     # solve the reaction forces:
     FE['P'][p] = FE['Kpp'] @ FE['U'][p] + FE['Kfp'].T @ FE['U'][f]
@@ -450,3 +440,4 @@ def init_FE(FE,OPT,GEOM):
 
     # compute the element stiffness matrices
     FE_init_element_stiffness(FE,OPT,GEOM)
+

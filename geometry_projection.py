@@ -1,5 +1,6 @@
 import numpy as np
 import scipy.sparse as sp
+from FE_routines import *
 
 def init_geometry(FE,OPT,GEOM):
     #
@@ -22,16 +23,6 @@ def init_geometry(FE,OPT,GEOM):
         GEOM['initial_design']['point_matrix'] = GEOM['current_design']['point_matrix']
         GEOM['initial_design']['bar_matrix'] = GEOM['current_design']['bar_matrix']
     
-    ## No implementado
-    # plot the initial design:
-    # if GEOM['initial_design'].plot:
-    #     plot_design(1, \
-    #         GEOM['initial_design']['point_matrix'], \
-    #         GEOM['initial_design']['bar_matrix'])
-    #     axis equal
-    #     title('initial design')
-    #     drawnow
-    
     GEOM['n_point'] = np.size( GEOM['initial_design']['point_matrix'] , 0 )
     GEOM['n_bar']   = np.size( GEOM['initial_design']['bar_matrix'] , 0 )
 
@@ -52,7 +43,7 @@ def compute_bar_elem_distance(FE,OPT,GEOM):
     x_1b = points.T.flatten()[OPT['bar_dv'][0:dim,:]] # (i,b) 
     x_2b = points.T.flatten()[OPT['bar_dv'][dim:2*dim,:]] # (i,b) 
     x_e = FE['centroids']                        # (i,1,e)
-    
+
     a_b  = x_2b - x_1b
     l_b  = np.sqrt( np.sum( a_b**2 , 0 ) )  # length of the bars, Eq. (10)
     l_b[ np.where(l_b < tol) ] = 1          # To avoid division by zero
@@ -60,12 +51,12 @@ def compute_bar_elem_distance(FE,OPT,GEOM):
 
     x_e_1b = (x_e.T[:,None] - x_1b.T).swapaxes(0,2)               # (i,b,e) 
     x_e_2b = (x_e.T[:,None] - x_2b.T).swapaxes(0,2)                 # (i,b,e) 
-    norm_x_e_1b = np.sqrt( np.sum( np.power( x_e_1b , 2 ) , 0 ) )   # (1,b,e)
-    norm_x_e_2b = np.sqrt( np.sum( np.power( x_e_2b , 2 ) , 0 ) )   # (1,b,e) 
+    norm_x_e_1b = np.sqrt( np.sum( x_e_1b**2 , 0 ) )  # (1,b,e)
+    norm_x_e_2b = np.sqrt( np.sum( x_e_2b**2 , 0 ) )   # (1,b,e) 
 
     l_be     = np.sum( x_e_1b * a_b[:,:,None] , 0 )                 # (1,b,e), Eq. (12)
     vec_r_be = x_e_1b - ( l_be.T * a_b[:,None] ).swapaxes(1,2)      # (i,b,e)
-    r_be     = np.sqrt( np.sum( np.power( vec_r_be , 2 ) , 0 ) )    # (1,b,e), Eq. (13)
+    r_be     = np.sqrt( np.sum( vec_r_be**2 , 0 ) )    # (1,b,e), Eq. (13)
 
     l_be_over_l_b = (l_be.T / l_b).T
 
@@ -84,21 +75,23 @@ def compute_bar_elem_distance(FE,OPT,GEOM):
 
     d_inv = dist**(-1)           # This can rer a division by zero 
     d_inv[ np.isinf( d_inv ) ] = 0 # lies on medial axis, and so we now fix it
-    
+
     ## The sensitivities below are obtained from Eq. (30)
     ## sensitivity to x_1b    
     Dd_be_Dx_1b = -x_e_1b * d_inv * branch1 + \
         -vec_r_be * d_inv * ( 1 - l_be_over_l_b ) * branch3
     
     Dd_be_Dx_2b = -x_e_2b * d_inv * branch2 + \
-        -vec_r_be * d_inv * ( 1 - l_be_over_l_b ) * branch3
-    
-    ## assemble the sensitivities to the bar design parameters (scaled)
-    Ddist_Dbar_s = np.concatenate((Dd_be_Dx_1b,Dd_be_Dx_2b),
-        axis=0).transpose((1,2,0)) * \
-        OPT['scaling']['point_scale'].repeat( 2 , axis=0 )
+        -vec_r_be * d_inv * l_be_over_l_b * branch3
 
-    return dist , Ddist_Dbar_s
+    ## assemble the sensitivities to the bar design parameters (scaled)
+    Dd_be_Dbar_ends = np.concatenate((Dd_be_Dx_1b,Dd_be_Dx_2b),
+        axis=0).transpose((1,2,0)) * \
+        np.concatenate( ( OPT['scaling']['point_scale'] , OPT['scaling']['point_scale'] ) )
+    # print( Dd_be_Dx_1b[:,1000:1005].transpose((2,0,1)) )
+    # time.sleep(10)
+
+    return dist , Dd_be_Dbar_ends
 
 
 def penalize(*args):
@@ -159,7 +152,7 @@ def project_element_densities(FE,OPT,GEOM):
     #
 
     ##  Distances from the element centroids to the medial segment of each bar
-    d_be , Dd_be_Dbar_s = compute_bar_elem_distance(FE,OPT,GEOM)
+    d_be , Dd_be_Dbar_ends = compute_bar_elem_distance(FE,OPT,GEOM)
 
     ## Bar-element projected densities
     r_b =  GEOM['current_design']['bar_matrix'][:,-1] # bar radii
@@ -167,7 +160,7 @@ def project_element_densities(FE,OPT,GEOM):
 
     # X_be is \phi_b/r in Eq. (2).  Note that the numerator corresponds to
     # the signed distance of Eq. (8).
-    X_be = ( ( r_b - d_be.T ).T / r_e )
+    X_be = ( r_b[:,None] - d_be ) / r_e[None,:]
 
     ## Projected density 
     # Initial definitions
@@ -182,21 +175,21 @@ def project_element_densities(FE,OPT,GEOM):
     if FE['dim'] == 2:  # 2D  
         rho_be[inB] = 1 + ( X_be[inB]*np.sqrt( 1.0 - X_be[inB]**2 ) - np.arccos(X_be[inB]) ) / np.pi
         Drho_be_Dx_be[inB] = ( np.sqrt( 1.0 - X_be[inB]**2 )*2.0 ) / np.pi # Eq. (28)
-
+        # rho_be = np.arctan(3*X_be)/np.pi + 0.5
+        # Drho_be_Dx_be = 3/(np.pi*(1+9*X_be**2))
     elif FE['dim'] == 3:
         rho_be[inB] = ( (X_be[inB]-2.0)*(-1.0/4.0)*(X_be[inB]+1.0)**2 )
         Drho_be_Dx_be[inB] = ( X_be[inB]**2*(-3.0/4.0)+3.0/4.0 ) # Eq. (28)
 
     # Sensitivities of raw projected densities, Eqs. (27) and (29)
-    Drho_be_Dbar_s = ( Drho_be_Dx_be * -1/r_e * 
-        Dd_be_Dbar_s.transpose((2,0,1)) ).transpose((1,2,0))
+    Drho_be_Dbar_ends = ( Drho_be_Dx_be * -1/r_e * 
+        Dd_be_Dbar_ends.transpose((2,0,1)) ).transpose((1,2,0))
     
     Drho_be_Dbar_radii  = OPT['scaling']['radius_scale'] * Drho_be_Dx_be * np.transpose(1/r_e)
 
-
     ## Combined densities
     # Get size variables    
-    alpha_b = GEOM['current_design']['bar_matrix'][:,-1] # bar size
+    alpha_b = GEOM['current_design']['bar_matrix'][:,-2] # bar size
 
     # Without penalization:
     # ====================
@@ -206,8 +199,8 @@ def project_element_densities(FE,OPT,GEOM):
 
     # Sensitivities of unpenalized effective densities, Eq. (26) with
     # ?\partial \mu / \partial (\alpha_b \rho_{be})=1
-    DX_be_Dbar_s = Drho_be_Dbar_s * alpha_b[:,None,None]
-    DX_be_Dbar_size = rho_be  
+    DX_be_Dbar_s = Drho_be_Dbar_ends * alpha_b[:,None,None]
+    DX_be_Dbar_size = rho_be.copy()  
     DX_be_Dbar_radii = Drho_be_Dbar_radii * alpha_b[:,None]
 
     # Combined density of Eq. (5).
@@ -226,8 +219,8 @@ def project_element_densities(FE,OPT,GEOM):
     Drho_e_Ddv = np.zeros(( FE['n_elem'], OPT['n_dv'] ))
     for b in range(0,GEOM['n_bar']):
         Drho_e_Ddv[:,OPT['bar_dv'][:,b]] = \
-            Drho_e_Ddv[:,OPT['bar_dv'][:,b]] + \
-            np.concatenate( ( Drho_e_Dbar_s[b,:,:].reshape( ( FE['n_elem'], 2*FE['dim'] ) ) ,  \
+            Drho_e_Ddv[:,OPT['bar_dv'][:,b]] + np.concatenate( ( \
+            Drho_e_Dbar_s[b,:,:].reshape( ( FE['n_elem'], 2*FE['dim'] )  , order='F' ) ,  \
             Drho_e_Dbar_size[b,:].reshape( ( FE['n_elem'], 1 ) ) ,  \
             Drho_e_Dbar_radii[b,:].reshape( ( FE['n_elem'], 1 ) ) ) , axis=1 )
 
@@ -261,9 +254,8 @@ def project_element_densities(FE,OPT,GEOM):
     # variables into a single vector per element
     for b in range(0,GEOM['n_bar']):
         Dpenal_rho_e_Ddv[:,OPT['bar_dv'][:,b]] = \
-            Dpenal_rho_e_Ddv[:,OPT['bar_dv'][:,b]] + \
-            np.concatenate( \
-                ( Dpenal_rho_e_Dbar_s[b,:,:].reshape( ( FE['n_elem'], 2*FE['dim'] ) ) ,  \
+            Dpenal_rho_e_Ddv[:,OPT['bar_dv'][:,b]] + np.concatenate( \
+                ( Dpenal_rho_e_Dbar_s[b,:,:].reshape( ( FE['n_elem'], 2*FE['dim'] ) , order='F' ) ,  \
                 Dpenal_rho_e_Dbar_size[b,:].reshape( ( FE['n_elem'], 1 ) ) ,  \
                 Dpenal_rho_e_Dbar_radii[b,:].reshape( ( FE['n_elem'], 1 ) ) ) , \
                 axis = 1 )
@@ -273,7 +265,7 @@ def project_element_densities(FE,OPT,GEOM):
     OPT['Delem_dens_Ddv'] = Drho_e_Ddv
     OPT['penalized_elem_dens'] = penal_rho_e
     OPT['Dpenalized_elem_dens_Ddv'] = Dpenal_rho_e_Ddv
-    
+
 
 def smooth_max(x,p,form_def,x_min):
     #
@@ -305,12 +297,13 @@ def smooth_max(x,p,form_def,x_min):
         dSdx = (1-x_min**p)*(1/N)*(x/S)**(p-1)         
 
     elif form_def == 'KS':
+        epx = np.exp(x)
         S = x_min + (1-x_min)*np.log( np.sum(epx(x),axis=0) )/p
         dSdx = (1-x_min)*np.epx( p*x )/np.sum(epx(x),axis=0)
 
     elif form_def == 'KS_under':
         # note: convergence might be fixed with Euler-Gamma
-        N = size(x,1)
+        N = x.shape[0]
         S = x_min + (1-x_min)*np.log( np.sum( np.exp(x) ,axis=0) /N) / p 
         dSdx = (1-x_min)*np.exp( p*x ) / np.sum(np.exp(x),axis=0)
     else:
@@ -334,14 +327,13 @@ def update_dv_from_geom(FE,OPT,GEOM):
     OPT['dv'][ OPT['point_dv'],0 ] = ( ( GEOM['initial_design']['point_matrix'][:,1:] -
         OPT['scaling']['point_min'] ) / OPT['scaling']['point_scale'] ).flatten()
     
-    OPT['dv'][ OPT['size_dv'],0 ] = GEOM['initial_design']['bar_matrix'][:,-2]
+    OPT['dv'][ OPT['size_dv'],0 ] = GEOM['initial_design']['bar_matrix'][:,-2].copy()
 
     OPT['dv'][ OPT['radius_dv'],0 ] = ( GEOM['initial_design']['bar_matrix'][:,-1] \
         - OPT['scaling']['radius_min'] ) / OPT['scaling']['radius_scale'] 
 
 
 def update_geom_from_dv(FE,OPT,GEOM):
-    #
     # This def updates the values of the unscaled bar geometric parameters
     # from the values of the design variableds (which will be scaled if
     # OPT.options['dv']_scaling is true). It does the
@@ -350,10 +342,13 @@ def update_geom_from_dv(FE,OPT,GEOM):
     # global GEOM , OPT , FE
 
     # Eq. (32)
-    GEOM['current_design']['point_matrix'][:,12:] = \
-        ( OPT['scaling']['point_scale'] * OPT['dv'][ OPT['point_dv'] ].reshape( ( FE['dim'] , GEOM.n_point ) ) \
-            + np.transpose( OPT['scaling']['point_min'] ) )
-    GEOM['current_design']['bar_matrix'][:,-2] = \
-        OPT['dv'][ OPT['size_dv'] ]
-    GEOM['current_design']['bar_matrix'][:,-1] = OPT['dv'](OPT['radius_dv']) * OPT['scaling']['radius_scale'] \
-        + OPT['scaling']['radius_min']
+    GEOM['current_design']['point_matrix'][:,1:] = ( OPT['scaling']['point_scale'][:,None] * \
+            OPT['dv'][ OPT['point_dv'] ].reshape( (FE['dim'],GEOM['n_point']) ,order='F') + \
+            OPT['scaling']['point_min'][:,None] ).T
+
+    GEOM['current_design']['bar_matrix'][:,-2] = OPT['dv'][OPT['size_dv']].copy().flatten()
+
+    GEOM['current_design']['bar_matrix'][:,-1] = ( OPT['dv'][OPT['radius_dv']] * \
+        OPT['scaling']['radius_scale'] + \
+        OPT['scaling']['radius_min'] ).flatten()
+

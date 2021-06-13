@@ -45,35 +45,28 @@
 # =========================================================================
 
 ## source folders containing scripts not in this folder
-
-OPT  = {}
-GEOM = {}
-FE   = {}
-
-exec(open('get_inputs.py').read())
-
 import time
 
-from gp_util import *
-from mesh_util import *
+from geometry_projection import *
+from mesh_utilities import *
 from FE_routines import *
 from optimization import *
+from functions import *
 from utilities import *
+from plotting import *
 
-#addpath(genpath('plotting'))
+
+exec(open('get_inputs.py').read())
 
 ## Start timer
 tic = time.perf_counter()
 
 ## Initialization
-
 init_FE(FE,OPT,GEOM)
 init_geometry(FE,OPT,GEOM)
 init_optimization(FE,OPT,GEOM)
 
-# # load('matlab.mat','GEOM') update_dv_from_geom
-
-# ## Analysis
+## Analysis
 perform_analysis(FE,OPT,GEOM) 
 
 ## Finite difference check of sensitivities
@@ -81,16 +74,12 @@ perform_analysis(FE,OPT,GEOM)
 if OPT['make_fd_check']:
     run_finite_difference_check()
 
-# ## Optimization
-if  'fmincon-active-set' == OPT['options']['optimizer']:
-    OPT['history'] = runfmincon(OPT.dv,@(x)obj(x),@(x)nonlcon(x))
-elif 'mma' == OPT['options']['optimizer']:
-    OPT.history = runmma(OPT.dv,@(x)obj(x),@(x)nonlcon(x))
+## Optimization
+OPT['history'] = runopt(FE,OPT,GEOM,OPT['dv'], obj , nonlcon )
+
+# hold graph
+plt.ioff()
 
 # ## Plot History
-# if True == OPT.options.plot:
-#     plot_history(3)
-
-# ## Report time
-# toc = time.perf_counter()
-# print( "Time in seconds: str(toc-tic)" )
+if True == OPT['options']['plot']:
+    plot_history(2)

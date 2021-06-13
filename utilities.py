@@ -1,118 +1,155 @@
-import numpy as np
-from gp_util import *
-from FE_routines import *
 
-def compute_compliance(FE,OPT,GEOM):
-    # This function computes the mean compliance and its sensitivities
-    # based on the last finite element analysis
-    # global FE, OPT
+def fd_check_cost():
+    # This function performs a finite difference check of the sensitivities of
+    # the COST function with respect to the bar design variables.
+    global OPT 
 
-    # compute the compliance (Eq. (15))
-    c = np.dot( FE['U'] , FE['P'] )
+    # Finitite diference sensitivities
+    n_dv = OPT['n_dv']
+    grad_theta_i = np.zeros( (n_dv,1) )
+
+    fd_step = OPT['fd_step_size']
+
+    max_error           = 0.0 
+    max_rel_error       = 0.0 
+    max_error_bar       = 0 
+    max_rel_error_bar   = 0 
+    dv_0 = OPT['dv'].copy() 
+    dv_i = OPT['dv'].copy()
+
+    theta_0, grad_theta_0 = obj(dv_0) 
     
-    # compute the design sensitivity
-    Ke = FE['Ke']
-    Ue = FE['U'][FE['edofMat']].repeat(FE['n_edof'],axis=2).transpose((1,2,0))
-    Ue_T = Ue.transpose((1,0,2))
+    # Finite differences
+    print('Computing finite difference sensitivities...') 
 
-    Dc_Dpenalized_elem_dens = np.sum( np.sum( 
-        - Ue_T * Ke * Ue , 
-        0 ) , 0 )   # Eq. (24)
+    # Do this for all design variables or only a few
+    up_to_dv = n_dv 
 
-    Dc_Ddv = Dc_Dpenalized_elem_dens[:,None] * OPT['Dpenalized_elem_dens_Ddv'] # Eq. (25)
-    grad_c = Dc_Ddv.T
-    # save these values in the OPT structure
-    OPT['compliance'] = c
-    OPT['grad_compliance'] = grad_c
+    for i in range(0,up_to_dv):
+        # Preturb dv
+        dv_i[i] = dv_0[i] + fd_step 
+        theta_i , __ = obj(dv_i) 
 
-    return c , grad_c
+        grad_theta_i[i] = (theta_i - theta_0)/fd_step 
+
+        error = grad_theta_0[i] - grad_theta_i[i] 
+
+        if np.abs(error) > np.abs(max_error):
+            max_error = error 
+            max_error_dv = i 
+
+        rel_error = error / theta_0 
+        if np.abs(rel_error) > np.abs(max_rel_error):
+            max_rel_error = rel_error 
+            max_rel_error_dv = i    
+
+        dv_i = dv_0.copy() 
+
+    theta_0, grad_theta_0 = obj(dv_0)  # to reset the design
+
+    print('Max. ABSOLUTE error is:' )
+    print(max_error)
+    print('It occurs at:') 
+    print('\tvariable:' + str(max_error_dv) )
+
+    print('Max. RELATIVE error is:' )
+    print(max_rel_error)
+    print('It occurs at:') 
+    print('\tvariable:' + str(max_rel_error_dv) )
+
+    plt.figure(2)
+    plt.plot(grad_theta_i,'+')
+    plt.plot(grad_theta_0,'.')
+    # plt.legend('fd','analytical')
+    plt.title('cost function')
+    plt.xlabel('design variable z') 
+    plt.ylabel('dc/dz') 
+    plt.show()
 
 
-def compute_volume_fraction(FE,OPT,GEOM):
-    #
-    # This function computes the volume fraction and its sensitivities
-    # based on the last geometry projection
-    #
-    # global FE, OPT
+def fd_check_constraint():
+    # This function performs a finite difference check of the sensitivities of
+    # the CONSTRAINT function with respect to the bar design variables.
+    # It is currently setup for one constraint, but it can be easily modified
+    # for other/more constraints.
+    global OPT
 
-    # compute the volume fraction
-    v_e = FE['elem_vol'] # element
-    V = np.sum(v_e) # full volume
-    v = np.dot( v_e , OPT['elem_dens'] ) # projected volume
-    volfrac =  v/V # Eq. (16)
+    # ===============================
+    # FINITE DIFFERENCE SENSITIVITIES
+    # ===============================
+    n_dv = OPT['n_dv']
+    grad_theta_i = np.zeros( (n_dv, 1) )
 
-    # compute the design sensitivity
-    Dvolfrac_Ddv = (v_e @ OPT['Delem_dens_Ddv'] )/V   # Eq. (31)
-    grad_vofrac = Dvolfrac_Ddv
+    fd_step = OPT['fd_step_size']
+
+    max_error           = 0.0 
+    max_rel_error       = 0.0 
+    max_error_bar       = 0 
+    max_rel_error_bar   = 0 
     
-    # output
-    OPT['volume_fraction'] = volfrac
-    OPT['grad_volume_fraction'] = grad_vofrac
+    dv_0 = OPT['dv'].copy()
+    dv_i = OPT['dv'].copy()
 
-    return volfrac , grad_vofrac
+    theta_0 = nonlcon(dv_0) 
+    grad_theta_0 = nonlcongrad(dv_0)
+    # Finite differences
+    print('Computing finite difference sensitivities...') 
 
+    # Do this for all design variables or only a few
+    # up_to_dv = n_dv 
+    up_to_dv = n_dv 
 
-def evaluate_relevant_functions(FE,OPT,GEOM):
-    # Evaluate_relevant_functions() looks at OPT['functions'] and evaluates the
-    # relevant functions for this problem based on the current OPT['dv']
-    # global OPT
+    for i in range(0,up_to_dv):
+        #perturb dv
+        dv_i[i] = dv_0[i] + fd_step 
+        theta_i = nonlcon(dv_i) 
 
-    OPT['functions']['n_func'] =  len( OPT['functions']['f'] )
+        grad_theta_i[i] = (theta_i - theta_0)/fd_step 
 
-    for i in range(0,OPT['functions']['n_func']):
-        value , grad = eval( OPT['functions']['f'][i]['function'] + "(FE,OPT,GEOM)" )
-        OPT['functions']['f'][i]['value'] = value
-        OPT['functions']['f'][i]['grad'] = grad
+        error = grad_theta_0[i] - grad_theta_i[i] 
 
-
-def nonlcon(dv):
-    # [g, geq, gradg, gradgeq] = nonlcon(dv) returns the costraints
-    # global  OPT
-    
-    OPT['dv_old'] = OPT['dv']
-    OPT['dv'] = dv
-    
-    if OPT['dv'] != OPT['dv_old']:
-        # Update or perform the analysis
-        update_geom_from_dv() # update GEOM for this design
-        perform_analysis()
-
-    n_con   = OPT['functions']['n_func']-1 # number of constraints
-    g       = np.zeros(n_con,1)
-    gradg   = np.zeros(OPT['n_dv'],n_con)
-
-    for i in range(0,n_con):
-        g[i] = OPT['functions']['f'][i+1]['value']
-        g    = g - OPT['functions']['constraint_limit']
+        if np.abs(error) > np.abs(max_error):
+            max_error = error 
+            max_error_dv = i 
         
-        gradg[:,i] = OPT['functions']['f'][i+1].grad
+        rel_error = error / theta_0 
+        if np.abs(rel_error) > np.abs(max_rel_error):
+            max_rel_error = rel_error 
+            max_rel_error_dv = i    
 
-    return g, geq
+        dv_i = dv_0.copy()
+
+    theta_0 = nonlcon(dv_0)  # to reset the design
+    grad_theta_0 = nonlcongrad(dv_0)  # to reset the design
+
+    print('Max. ABSOLUTE error is:') 
+    print( max_error )
+    print('It occurs at:') 
+    print('\tvariable:' + str(max_error_dv) )
+
+    print('Max. RELATIVE error is:')
+    print( max_rel_error )
+    print('It occurs at:') 
+    print('\tvariable:' + str(max_rel_error_dv) )
+
+    plt.figure(3)
+    plt.plot(grad_theta_i,'+')
+    plt.plot(grad_theta_0,'.')
+    # plt.legend('fd','analytical')
+    plt.title('constraint function')
+    plt.xlabel('design variable z') 
+    plt.ylabel('dv/dz') 
+    plt.show()
 
 
-def obj(dv):
-    global  OPT
-    
-    OPT['dv_old'] = OPT['dv'] # save the previous design
-    OPT['dv'] = dv # update the design
-    
-    
-    if OPT['dv'] != OPT['dv_old']:
-        # If different, update or perform the analysis
-        update_geom_from_dv(FE,OPT,GEOM)
-        perform_analysis(FE,OPT,GEOM)
+def run_finite_difference_check():
+    # This function performs a finite difference check of the analytical
+    # sensitivities of the cost and/or constraint functions by invoking the
+    # corresponding routines.
+    global OPT
 
-    f = OPT['functions']['f'][0]['value']
-    # gradf = OPT['functions']['f'][0]['grad']
-    
-    return f
-
-
-def perform_analysis(FE,OPT,GEOM):
-    # Perform the geometry projection, solve the finite
-    # element problem for the displacements and reaction forces, and then
-    # evaluate the relevant functions.
-    project_element_densities(FE,OPT,GEOM)
-    FE_analysis(FE,OPT,GEOM)
-    evaluate_relevant_functions(FE,OPT,GEOM)
+    if OPT['check_cost_sens']:
+        fd_check_cost()
+    if OPT['check_cons_sens']:
+        fd_check_constraint()
 
