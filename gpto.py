@@ -77,9 +77,14 @@ if OPT['make_fd_check']:
 ## Optimization
 OPT['history'] = runopt(FE,OPT,GEOM,OPT['dv'], obj , nonlcon )
 
+# Report time
+toc = time.perf_counter()
+print( "Elapsed time: " + str( toc - tic ) )
+
 # hold graph
 plt.ioff()
 
 # ## Plot History
 if True == OPT['options']['plot']:
     plot_history(2)
+

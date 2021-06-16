@@ -20,20 +20,22 @@ if FE['dim'] == 3:
 
 ## ============================
 ## Compute predefined node sets
-compute_predefined_node_sets(FE,{ 0:'TL_pt' , 1:'BR_pt' , 2:'L_edge' })
+compute_predefined_node_sets(FE,{ 0:'MR_pt' , 1:'TLK_pt' , 2:'TLF_pt' , 3:'BLK_pt' , 4:'BLF_pt' })
 # for an overview of this function, use: help compute_predefined_node_sets
 
-TL_pt  = FE['node_set']['TL_pt']
-BR_pt  = FE['node_set']['BR_pt']
-L_edge = FE['node_set']['L_edge']
+MR_pt  = FE['node_set']['MR_pt']
+TLK_pt  = FE['node_set']['TLK_pt']
+TLF_pt  = FE['node_set']['TLF_pt']
+BLK_pt  = FE['node_set']['BLK_pt']
+BLF_pt  = FE['node_set']['BLF_pt']
 ## ============================        
 
 
 ## Applied forces
 net_mag = -0.1  # Force magnitude (net over all nodes where applied)
-load_dir = 1   # Force direction 
+load_dir = 2   # Force direction 
     
-load_region = TL_pt
+load_region = MR_pt
 load_mag = net_mag/len(load_region)
 
 # Here, we build the array with all the loads.  If you have multiple
@@ -52,17 +54,17 @@ load_mat[:,2] = load_mag
 ## Displacement boundary conditions
 
 # Symmetry boundary condition on left-hand side edge
-disp_region1 = L_edge[None,:]
-disp_dirs1   = np.zeros( ( 1, disp_region1.shape[1] ) )
-disp_mag1    = np.zeros( (1, disp_region1.shape[1] ) )
-# Vertical roller on bottom-right point
-disp_region2 = BR_pt[None,:]
-disp_dirs2  = np.array([[1]])
-disp_mag2   = np.array([[0]])
+disp_region = np.stack((TLK_pt,TLF_pt,BLK_pt,BLF_pt),axis=1)
+disp_mag    = np.zeros( ( 1, disp_region.shape[1] ) )
+disp_dirs0  = np.zeros( ( 1, disp_region.shape[1] ) )
+disp_dirs1  = np.ones(  ( 1, disp_region.shape[1] ) )
+disp_dirs2  = 2*np.ones(( 1, disp_region.shape[1] ) )
+
+
 # Combine displacement BC regions
-disp_region = np.concatenate((disp_region1,disp_region2),axis=1)
-disp_dirs   = np.concatenate((disp_dirs1,disp_dirs2),axis=1)
-disp_mag    = np.concatenate((disp_mag1,disp_mag2),axis=1)
+disp_region = np.concatenate((disp_region,disp_region,disp_region),axis=1)
+disp_dirs   = np.concatenate((disp_dirs0,disp_dirs1,disp_dirs2),axis=1)
+disp_mag    = np.concatenate((disp_mag,disp_mag,disp_mag),axis=1)
 
 # In this example, we are constraining both the x- 
 # and y- displacements. 

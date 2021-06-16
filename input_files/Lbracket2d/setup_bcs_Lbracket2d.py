@@ -30,7 +30,7 @@ T_edge = np.where( FE['coords'][1,:] == 100 )[0]
 
 ## Applied forces
 net_mag = -.1  # Force magnitude (net over all nodes where applied)
-load_dir = 2   # Force direction 
+load_dir = 1   # Force direction 
     
 load_region = TR_pt
 load_mag = net_mag/len(load_region)

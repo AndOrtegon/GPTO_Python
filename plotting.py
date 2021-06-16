@@ -16,23 +16,65 @@ def plot_density(fig):
         # linearly interpolated between the centroids of the mesh.
         plot_density_levelsets(fig)
 
+    title_string = 'density, %s = %f' % ( OPT['functions']['objective'] , OPT['functions']['f'][0]['value'] )
+    plt.title( title_string )    
+    
+    plt.pause(0.0001)
+    plt.draw()
+
 
 def plot_density_levelsets(fig):
     global FE, OPT, GEOM
+    
+    if FE['mesh_input']['type'] != 'generate' and \
+        FE['mesh_input']['type'] != 'read-home-made': # mesh was not generated
 
-    if 2 == FE['dim']:
-        img = 1 - OPT['elem_dens'].reshape( (
-            FE['mesh_input']['elements_per_side'][1],
-            FE['mesh_input']['elements_per_side'][0]) , order='F')
+        print('not yet implemented for non meshgrid conforming meshes')
 
-        img = np.flip(img,0)
+    ## Change here whether you want to plot the penalized (i.e., effective) or 
+    ## the unpenalized (i.e., projected) densities.  By default, we plot the 
+    ## effective densities.
+    #
+    # For penalized, use OPT.penalized_elem_dens;
+    # For unpenalized, use OPT.elem_dens;
 
-        plt.ion()
-        plt.figure(fig)
-        plt.imshow(img)
-        plt.gray()
-        plt.pause(0.0001)
-        plt.draw()
+    plot_dens = OPT['elem_dens']
+    # plot_dens = OPT['penalized_elem_dens']
+
+    plt.ion()
+    figu = plt.figure(fig)
+    ax = plt.gca()
+
+    if FE['dim'] == 2:
+        # Level sets 
+        n = 64
+        levels = np.linspace(0,1,n)
+
+        if not 'centroid_mesh' in OPT['options']:
+            OPT['options']['centroid_mesh'] = {}
+
+            mn = FE['mesh_input']['elements_per_side']
+            nm = mn[np.array((0,1))]  # for meshgrid
+
+            OPT['options']['centroid_mesh']['shape'] = nm
+            OPT['options']['centroid_mesh']['X'] = FE['centroids'][0,:].reshape(nm)
+            OPT['options']['centroid_mesh']['Y'] = FE['centroids'][1,:].reshape(nm)
+        
+        X = OPT['options']['centroid_mesh']['X']
+        Y = OPT['options']['centroid_mesh']['Y']
+        V = plot_dens.reshape( OPT['options']['centroid_mesh']['shape'] )
+        
+        ax.cla()
+        fv = plt.contourf( X , Y , V , levels , cmap='gray_r' , extend='both' )
+        
+        plt.xlim( (FE['coord_min'][0], FE['coord_max'][0]) )
+        plt.ylim( (FE['coord_min'][1], FE['coord_max'][1]) )
+        plt.gca().set_aspect('equal', adjustable='box')
+
+
+    elif FE['dim'] == 3:
+        levels = [.25,.5,.75]
+
 
 
 def plot_density_cells(fig):
@@ -51,7 +93,7 @@ def plot_density_cells(fig):
 
     ## 2D
     if FE['dim'] == 2:
-        F = FE['elem_node'].T # matrix of faces to be sent to patch function
+        F = FE['elem_node'].T # matrix of faces to be sent to PolyCollection
         V = FE['coords'].T # vertex list to be sent to patch function
 
     ## 3D
@@ -71,40 +113,20 @@ def plot_density_cells(fig):
     ax = plt.gca()
     ax.cla()
 
-    verts = V[F]
-    pc  = matplotlib.collections.PolyCollection(verts,  cmap='gray' )
-    pc.set_array(1-plot_dens)
-    ax.add_collection(pc)
-
-    plt.gca().set_aspect('equal', adjustable='box')
-    plt.xlim( (FE['coord_min'][0], FE['coord_max'][0]) )
-    plt.ylim( (FE['coord_min'][1], FE['coord_max'][1]) )
-
-    plt.pause(0.0001)
-    plt.draw()
 
     # for n levels of opacity color
-    # n = 64
-    # level = np.linspace(0,1,n+1)
-    # ax  = plt.gca()
+    n = 64
+    alpha = 1 - np.minimum( 1 , np.round( n * plot_dens ) / n )
 
-    # for i in range(n,1,-1): #1:n
-    #     low     = level[i-1]
-    #     high    = level[i]
-    #     alpha   = low
+    if FE['dim'] == 2:
+        verts = V[F]
+        pc  = matplotlib.collections.PolyCollection(verts,  cmap='gray' )
+        pc.set_array( alpha )
+        ax.add_collection(pc)
 
-    #     if FE['dim'] == 3:
-    #         C = np.amin( plot_dens , axis=0 ).repeat(6,axis=0)
-    #     else:
-    #         C = np.amin( plot_dens , axis=0 )
-        
-    #     f = np.logical_and( low < C , C <= high )
-
-    #     verts = V[F[f,:]]
-    #     pc  = matplotlib.collections.PolyCollection(verts,  cmap='gray' )
-    
-    #     pc.set_array(alpha)
-    #     ax.add_collection(pc)
+        plt.gca().set_aspect('equal', adjustable='box')
+        plt.xlim( (FE['coord_min'][0], FE['coord_max'][0]) )
+        plt.ylim( (FE['coord_min'][1], FE['coord_max'][1]) )
 
 
 def plot_design(*args):
@@ -113,6 +135,7 @@ def plot_design(*args):
     global GEOM, FE
 
     nargs = len(args)
+
     if nargs == 0:
         fig = 1
         point_mat = GEOM['current_design']['point_matrix']
@@ -131,7 +154,7 @@ def plot_design(*args):
     ## user specified parameters
 
     # set the color of the bars
-    bar_color = (1,0,0)    # red 
+    bar_color = np.array((1,0,0))    # red 
     # set size variable threshold to plot bars
     size_tol = 0.05
     # set the resolution of the bar-mesh (>=8 and even)
@@ -171,7 +194,7 @@ def plot_design(*args):
     e_alpha[2,case_3] = 1
 
     e_2b        = l_b * np.cross(e_alpha,e_hat_1b,axis=0)
-    norm_e_2b   = np.sqrt( np.sum(e_2b**2) )
+    norm_e_2b   = np.sqrt( np.sum(e_2b**2,0) )
     e_hat_2b    = e_2b/norm_e_2b
     
     ## tertiary bar direction
@@ -197,11 +220,11 @@ def plot_design(*args):
         sx1 = z[0:N//2,:]
         sy1 = x[0:N//2,:]
         sz1 = y[0:N//2,:]
-        sx2 = z[N//2+1:,:]
-        sy2 = x[N//2+1:,:]
-        sz2 = y[N//2+1:,:]
-        X1 = [sx1, sy1, sz1].T
-        X2 = [sx2, sy2, sz2].T
+        sx2 = z[N//2:,:]
+        sy2 = x[N//2:,:]
+        sz2 = y[N//2:,:]
+        X1  = np.stack( ( sx1.flatten('F') , sy1.flatten('F') , sz1.flatten('F') ) , axis=1 ).T
+        X2  = np.stack( ( sx2.flatten('F') , sy2.flatten('F') , sz2.flatten('F') ) , axis=1 ).T
     else:
         N = N**2
         t =  np.linspace( -np.pi/2 , -np.pi/2+2*np.pi , N )
@@ -221,66 +244,75 @@ def plot_design(*args):
         X2 = np.array([cxf, cyf, czf])
 
     ## create the surface for each bar and plot it
-    vertices = np.zeros((n_bar,256,2)) 
     r_b     = bar_mat[:,-1]
     alpha   = bar_mat[:,-2]
 
-    for b in range(0,n_bar):
-        bar_X1 = r_b[b] * R_b[:,:,b] @ X1 + x_1b[:,b][:,None]
-        bar_X2 = r_b[b] * R_b[:,:,b] @ X2 + x_2b[:,b][:,None]
-
-        if FE['dim'] == 3:
-            bar_x1 = np.reshape(bar_X1[0,:], [N/2, N])
-            bar_y1 = np.reshape(bar_X1[1,:], [N/2, N])
-            bar_z1 = np.reshape(bar_X1[2,:], [N/2, N])
-
-            bar_x2 = np.reshape(bar_X2[0,:], [N/2, N])
-            bar_y2 = np.reshape(bar_X2[1,:], [N/2, N])
-            bar_z2 = np.reshape(bar_X2[2,:], [N/2, N])
-        else:
-            bar_x1 = bar_X1[0,:].T
-            bar_y1 = bar_X1[1,:].T
-            bar_z1 = bar_X1[2,:].T
-
-            bar_x2 = bar_X2[0,:].T
-            bar_y2 = bar_X2[1,:].T
-            bar_z2 = bar_X2[2,:].T
-
-        bar_x = np.concatenate( (bar_x1 , bar_x2) )
-        bar_y = np.concatenate( (bar_y1 , bar_y2) )
-        bar_z = np.concatenate( (bar_z1 , bar_z2) )
-
-        vertices[b,:,0] = bar_x
-        vertices[b,:,1] = bar_y
-        
-
-    plt.ion()
-    plt.figure(fig)    
-    ax = plt.gca()
-    ax.cla()
-
     Color = bar_color
-    Alpha = alpha[b]**2
-
     # C = colormap('gray')
     # colormap(C.*Color) # color the gray-scale map
 
-    if FE['dim'] == 3:
-        s = surfl(bar_x,bar_y,bar_z); # shaded surface with lighting
-        # s.LineStyle = 'none'
-        # s.FaceAlpha = Alpha
+    plt.ion()
+    figu = plt.figure(fig)    
 
-        plt.zlim( (FE['coord_min'][2], FE['coord_max'][2]) )
-        # shading interp
-    else:
-        pc  = matplotlib.collections.PolyCollection(vertices,cmap='gray')
-        pc.set_array(128*np.ones(8))
-        ax.add_collection(pc)
-        # s.FaceAlpha = Alpha
+    if FE['dim'] == 2:
+        ax = plt.gca()
+        ax.cla()
+    elif FE['dim'] == 3: 
+        ax = plt.axes(projection='3d')
+        ax.cla()
+    
+    for b in range(0,n_bar):
+        Alpha = alpha[b]**2
 
-    plt.xlim( (FE['coord_min'][0], FE['coord_max'][0]) )
-    plt.ylim( (FE['coord_min'][1], FE['coord_max'][1]) )
-    plt.gca().set_aspect('equal', adjustable='box')
+        if Alpha > size_tol:
+            bar_X1 = r_b[b] * R_b[:,:,b] @ X1 + x_1b[:,b][:,None]
+            bar_X2 = r_b[b] * R_b[:,:,b] @ X2 + x_2b[:,b][:,None]
+
+            if FE['dim'] == 3:
+                bar_x1 = np.reshape(bar_X1[0,:], [N//2, N+1] , order='F' )
+                bar_y1 = np.reshape(bar_X1[1,:], [N//2, N+1] , order='F' )
+                bar_z1 = np.reshape(bar_X1[2,:], [N//2, N+1] , order='F' )
+
+                bar_x2 = np.reshape(bar_X2[0,:], [N//2+1, N+1] , order='F' )
+                bar_y2 = np.reshape(bar_X2[1,:], [N//2+1, N+1] , order='F' )
+                bar_z2 = np.reshape(bar_X2[2,:], [N//2+1, N+1] , order='F' )
+
+                bar_x = np.concatenate( (bar_x1 , bar_x2) )
+                bar_y = np.concatenate( (bar_y1 , bar_y2) )
+                bar_z = np.concatenate( (bar_z1 , bar_z2) )
+
+                # Create surface
+                s = ax.plot_surface(bar_x,bar_y,bar_z,
+                    cmap='Reds_r', antialiased=False)
+                ax.set_facecolor = np.array((1,0,0,Alpha))
+
+                ax.set_xlim( (FE['coord_min'][0], FE['coord_max'][0]) )
+                ax.set_ylim( (FE['coord_min'][1], FE['coord_max'][1]) )
+                ax.set_zlim( (FE['coord_min'][2], FE['coord_max'][2]) )
+            else:
+                bar_x1 = bar_X1[0,:].T
+                bar_y1 = bar_X1[1,:].T
+                bar_z1 = bar_X1[2,:].T
+
+                bar_x2 = bar_X2[0,:].T
+                bar_y2 = bar_X2[1,:].T
+                bar_z2 = bar_X2[2,:].T
+
+                bar_x = np.concatenate( (bar_x1 , bar_x2) )
+                bar_y = np.concatenate( (bar_y1 , bar_y2) )
+                bar_z = np.concatenate( (bar_z1 , bar_z2) )
+
+                # Create object in axis
+                vertices = np.array((bar_x,bar_y)).T[None,:,:]
+                pc  = matplotlib.collections.PolyCollection(vertices)
+
+                pc.set_facecolor( np.append(Color,Alpha) )
+                pc.set_edgecolor( np.array((0,0,0,1)) )
+                ax.add_collection(pc)
+
+                plt.xlim( (FE['coord_min'][0], FE['coord_max'][0]) )
+                plt.ylim( (FE['coord_min'][1], FE['coord_max'][1]) )
+                plt.gca().set_aspect('equal', adjustable='box')
 
     plt.pause(0.0001)
     plt.draw()
@@ -381,8 +413,7 @@ def writevtk(folder, name_prefix, iteration):
             fid.write( '{0:d} {1:d} {2:d} {3:d} {4:d} {5:d} {6:d} {7:d} {8:d} \n'.format( nel , 
                 FE['elem_node'][0, iel] , FE['elem_node'][1, iel] , FE['elem_node'][2, iel] ,
                 FE['elem_node'][3, iel] , FE['elem_node'][4, iel] , FE['elem_node'][5, iel] , 
-                FE['elem_node'][8, iel] , FE['elem_node'][7, iel] ) )
-        
+                FE['elem_node'][6, iel] , FE['elem_node'][7, iel] ) )
 
     # Write element types
     fid.write( "CELL_TYPES " + str(FE['n_elem']) + " \n" )

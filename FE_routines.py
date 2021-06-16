@@ -415,8 +415,8 @@ def init_FE(FE,OPT,GEOM):
 
     if 'generate' ==  FE['mesh_input']['type']:
         generate_mesh(FE,OPT,GEOM)
-    elif 'read-home-made' ==  FE['mesh_input']['type']:
-        load( FE['mesh_input'].mesh_filename )
+    # elif 'read-home-made' ==  FE['mesh_input']['type']:
+    #     load( FE['mesh_input'].mesh_filename )
     elif 'read-gmsh' == FE['mesh_input']['type']:
         read_gmsh(FE,OPT,GEOM)
     else:

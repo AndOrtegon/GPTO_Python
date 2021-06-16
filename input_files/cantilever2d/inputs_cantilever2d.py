@@ -52,7 +52,7 @@ plot_cond = True
 #                  earlier versions work if so, try at your own risk).
 #
 FE['mesh_input'] = {}
-FE['mesh_input']['type'] = 'read-gmsh'
+FE['mesh_input']['type'] = 'generate'
 
 # If mesh input type is 'generate', you must specify the dimensions of
 # the rectangle/cuboid and the number of elements along each direction:

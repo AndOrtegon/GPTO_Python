@@ -116,9 +116,6 @@ def runopt(FE,OPT,GEOM,x0,obj,nonlcon):
             figure = plt.figure(0)
             figure.canvas.manager.window.wm_geometry("+0+0")
 
-            if FE['dim'] == 3:
-                plt.zlim( (FE['coord_min'][2], FE['coord_max'][2] ) )
-
             plot_density(1)
             figure = plt.figure(1)
             figure.canvas.manager.window.wm_geometry("+500+0")
@@ -177,9 +174,9 @@ def runopt(FE,OPT,GEOM,x0,obj,nonlcon):
                 history['fconsval'] = np.concatenate( ( history['fconsval'] , state['constr'][0][:,None] ) , axis = 1 )
                 history['x']        = np.concatenate( ( history['x'] , x[:,None] ) , axis = 1 ) # here we make x into a column vector
 
-            folder, baseFileName = os.path.split(GEOM['initial_design']['path'] )
-            mat_filename = folder + '/' + baseFileName + '.mat'
-            savemat( mat_filename, GEOM )
+            folder, baseFileName = os.path.split( GEOM['initial_design']['path'] )
+            mat_filename = folder + '/' + baseFileName[:-3] + '.mat'
+            savemat( mat_filename , GEOM )
 
             if OPT['options']['write_to_vtk'] == 'all':
                 writevtk( OPT['options']['vtk_output_path'] , 'dens' , state.nit )

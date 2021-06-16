@@ -165,8 +165,8 @@ OPT['parameters']['penalization_param'] = 3
 ## Optimization parameters
 OPT['options'] = {}
 # Optimizer (options: 'fmincon-active-set' and 'mma')
-OPT['options']['optimizer'] = 'default'
-# OPT['options']['optimizer'] = 'mma'
+# OPT['options']['optimizer'] = 'default'
+OPT['options']['optimizer'] = 'mma'
 # Whether plots should be produced or not 
 OPT['options']['plot'] = plot_cond 
 # Write to a vkt file options are 'none', 'last' (only write last 
@@ -179,7 +179,7 @@ OPT['options']['dv_scaling'] = True
 # Move limits as a fraction of the range between bounds 
 OPT['options']['move_limit'] = 0.05 
 # Maximum number of iterations 
-OPT['options']['max_iter'] = 300
+OPT['options']['max_iter'] = 100
 # Minimum step size in design
 OPT['options']['step_tol'] = 1e-2
 # Convergence tolerance on KKT norm
